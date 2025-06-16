@@ -3,302 +3,254 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/omneity-labs/semango/internal/util/log"
-	"github.com/omneity-labs/semango/pkg/semango"
-	openai "github.com/sashabaranov/go-openai"
+	"github.com/sashabaranov/go-openai"
 	"golang.org/x/time/rate"
+
+	"github.com/omneity-labs/semango/internal/util"
+	"github.com/omneity-labs/semango/pkg/semango"
 )
 
-const (
-	defaultOpenAIRetries    = 3
-	defaultOpenAIRetryDelay = 2 * time.Second
-	defaultOpenAIQPS        = 5 // Default QPS for client-side rate limiting
-)
-
-// OpenAIEmbedderConfig holds configuration for the OpenAI embedding provider.
-type OpenAIEmbedderConfig struct {
-	APIKey       string
-	Model        string
-	BatchSize    int
-	Concurrency  int
-	Retries      int
-	RetryDelay   time.Duration
-	RateLimitQPS float64
-	// OrganizationID string // Optional OpenAI Organization ID
-}
-
-// Compile-time check to ensure OpenAIEmbedder implements semango.Embedder
-var _ semango.Embedder = (*OpenAIEmbedder)(nil)
-
-// OpenAIEmbedder implements the semango.Embedder interface using the OpenAI API.
+// OpenAIEmbedder implements the Embedder interface using OpenAI's API.
 type OpenAIEmbedder struct {
-	client    *openai.Client
-	config    OpenAIEmbedderConfig
-	dimension int
-	limiter   *rate.Limiter
+	client     *openai.Client
+	model      string
+	dimension  int
+	batchSize  int
+	concurrent int
+	limiter    *rate.Limiter
+	mu         sync.RWMutex
 }
 
-// NewOpenAIEmbedder creates a new OpenAIEmbedder.
-func NewOpenAIEmbedder(ctx context.Context, config OpenAIEmbedderConfig) (*OpenAIEmbedder, error) {
-	logger := log.FromContext(ctx)
+// OpenAIConfig holds configuration for the OpenAI embedder.
+type OpenAIConfig struct {
+	APIKey     string  // Usually from OPENAI_API_KEY env var
+	Model      string  // e.g., "text-embedding-3-large"
+	BatchSize  int     // Number of texts to embed in a single API call
+	Concurrent int     // Number of concurrent API calls
+	RateLimit  float64 // Requests per second limit
+	BaseURL    string  // Optional OpenAI API base URL override (e.g. for local endpoints)
+}
 
+// NewOpenAIEmbedder creates a new OpenAI embedding provider.
+func NewOpenAIEmbedder(config OpenAIConfig) (*OpenAIEmbedder, error) {
 	if config.APIKey == "" {
-		config.APIKey = os.Getenv("OPENAI_API_KEY")
-	}
-	if config.APIKey == "" {
-		return nil, fmt.Errorf("OpenAI API key not provided and OPENAI_API_KEY environment variable not set")
+		return nil, fmt.Errorf("OpenAI API key is required")
 	}
 	if config.Model == "" {
-		return nil, fmt.Errorf("OpenAI model not specified in config")
+		config.Model = "text-embedding-3-large" // Default model
 	}
-
-	// Apply defaults for unspecified config values
 	if config.BatchSize <= 0 {
-		config.BatchSize = 32 // A common default
-		logger.Debug("OpenAIEmbedder: BatchSize not set, defaulting", "value", config.BatchSize)
+		config.BatchSize = 48 // Default from spec
 	}
-	if config.Concurrency <= 0 {
-		config.Concurrency = 4 // A common default
-		logger.Debug("OpenAIEmbedder: Concurrency not set, defaulting", "value", config.Concurrency)
+	if config.Concurrent <= 0 {
+		config.Concurrent = 4 // Default from spec
 	}
-	if config.Retries < 0 { // Allow 0 for no retries
-		config.Retries = defaultOpenAIRetries
-		logger.Debug("OpenAIEmbedder: Retries not set, defaulting", "value", config.Retries)
-	}
-	if config.RetryDelay <= 0 {
-		config.RetryDelay = defaultOpenAIRetryDelay
-		logger.Debug("OpenAIEmbedder: RetryDelay not set, defaulting", "value", config.RetryDelay)
-	}
-	if config.RateLimitQPS <= 0 {
-		config.RateLimitQPS = defaultOpenAIQPS
-		logger.Debug("OpenAIEmbedder: RateLimitQPS not set, defaulting", "value", config.RateLimitQPS)
+	if config.RateLimit <= 0 {
+		config.RateLimit = 10.0 // Conservative default: 10 requests per second
 	}
 
-	var dim int
-	switch config.Model {
-	case "text-embedding-ada-002":
-		dim = 1536
-	case "text-embedding-3-small":
-		dim = 1536
-	case "text-embedding-3-large":
-		dim = 3072
-	default:
-		// Attempt to infer from model name if it contains dimensions like '...-1536' or '...-3072'
-		logger.Warn("Unknown OpenAI model specified, attempting to infer dimension.", "model", config.Model)
-		if strings.Contains(config.Model, "-3072") {
-			dim = 3072
-		} else if strings.Contains(config.Model, "-1536") {
-			dim = 1536
-		} else if strings.Contains(config.Model, "ada") {
-			dim = 1536 // Default for older ada, actual was 1024 for some, 1536 for ada-002
-		} else {
-			return nil, fmt.Errorf("unknown OpenAI model '%s' and could not infer dimension; please add to mapping or use a model name with explicit dimension", config.Model)
-		}
-		logger.Info("Inferred dimension for model", "model", config.Model, "dimension", dim)
+	// Create client with optional base URL
+	ocfg := openai.DefaultConfig(config.APIKey)
+	if config.BaseURL != "" {
+		ocfg.BaseURL = config.BaseURL
+	}
+	client := openai.NewClientWithConfig(ocfg)
+
+	// Determine dimension based on model
+	dimension := getModelDimension(config.Model)
+	if dimension == 0 {
+		return nil, fmt.Errorf("unknown model dimension for model: %s", config.Model)
 	}
 
-	clientConfig := openai.DefaultConfig(config.APIKey)
-	// if config.OrganizationID != "" {
-	// 	clientConfig.OrgID = config.OrganizationID
-	// }
-	client := openai.NewClientWithConfig(clientConfig)
-	limiter := rate.NewLimiter(rate.Limit(config.RateLimitQPS), config.Concurrency)
-
-	logger.Info("OpenAI Embedder initialized",
-		"model", config.Model,
-		"dimension", dim,
-		"batch_size", config.BatchSize,
-		"concurrency", config.Concurrency,
-		"qps_limit", config.RateLimitQPS,
-		"retries", config.Retries,
-		"retry_delay", config.RetryDelay.String(),
-	)
 	return &OpenAIEmbedder{
-		client:    client,
-		config:    config,
-		dimension: dim,
-		limiter:   limiter,
+		client:     client,
+		model:      config.Model,
+		dimension:  dimension,
+		batchSize:  config.BatchSize,
+		concurrent: config.Concurrent,
+		limiter:    rate.NewLimiter(rate.Limit(config.RateLimit), 1),
 	}, nil
 }
 
-// Dimension returns the embedding dimension for the configured model.
-func (e *OpenAIEmbedder) Dimension() int {
-	if e == nil {
-		// This case should ideally not happen if constructor is used correctly.
-		// Log an error or panic if it indicates a programming error.
+// getModelDimension returns the embedding dimension for known OpenAI models.
+func getModelDimension(model string) int {
+	switch model {
+	case "text-embedding-3-large":
+		return 3072
+	case "text-embedding-3-small":
+		return 1536
+	case "text-embedding-ada-002":
+		return 1536
+	case "text-embedding-nomic-embed-text-v1.5":
+		return 768
+	default:
+		// For unknown models, return 0 to indicate we need to discover it
 		return 0
 	}
-	return e.dimension
 }
 
-// Embed generates embeddings for a slice of texts.
-// It handles batching, concurrency, rate limiting, and retries.
-func (e *OpenAIEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	logger := log.FromContext(ctx)
-	if e == nil || e.client == nil {
-		return nil, fmt.Errorf("OpenAIEmbedder not initialized")
-	}
+// Embed implements the Embedder interface.
+func (oe *OpenAIEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	logger := util.FromContext(ctx)
+
 	if len(texts) == 0 {
 		return [][]float32{}, nil
 	}
 
-	totalTexts := len(texts)
-	allEmbeddings := make([][]float32, totalTexts)
+	logger.Debug("Starting OpenAI embedding", "num_texts", len(texts), "model", oe.model)
 
-	// Channel to distribute text indices to workers
-	jobs := make(chan int, totalTexts)
-	for i := 0; i < totalTexts; i++ {
-		jobs <- i
-	}
-	close(jobs)
+	// Split texts into batches
+	batches := oe.createBatches(texts)
+	results := make([][]float32, len(texts))
 
+	// Process batches with concurrency control
+	sem := make(chan struct{}, oe.concurrent)
+	errChan := make(chan error, len(batches))
 	var wg sync.WaitGroup
-	var firstError error
-	mu := &sync.Mutex{}
-	ctx, cancel := context.WithCancel(ctx) // Context for early exit on error
-	defer cancel()
 
-	numWorkers := e.config.Concurrency
-	if totalTexts < numWorkers {
-		numWorkers = totalTexts
-	}
-
-	for i := 0; i < numWorkers; i++ {
+	for i, batch := range batches {
 		wg.Add(1)
-		go func(workerID int) {
+		go func(batchIndex int, batchTexts []string) {
 			defer wg.Done()
-			currentBatch := make([]string, 0, e.config.BatchSize)
-			originalIndices := make([]int, 0, e.config.BatchSize)
 
-			processBatch := func() error {
-				if len(currentBatch) == 0 {
-					return nil
-				}
+			// Acquire semaphore
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-				logger.Debug("Processing batch", "worker_id", workerID, "batch_size", len(currentBatch), "texts_in_batch", len(currentBatch))
-
-				var attemptErr error
-				for attempt := 0; attempt <= e.config.Retries; attempt++ {
-					if ctx.Err() != nil { // Check for context cancellation from other goroutines
-						logger.Debug("Context cancelled, worker exiting batch processing", "worker_id", workerID)
-						return ctx.Err()
-					}
-
-					if err := e.limiter.Wait(ctx); err != nil {
-						logger.Error("Rate limiter wait error", "worker_id", workerID, "error", err)
-						return fmt.Errorf("rate limiter error: %w", err) // Critical error, don't retry this step
-					}
-
-					apiModel := openai.EmbeddingModel(e.config.Model)
-					if apiModel == "" {
-						// This should have been caught in NewOpenAIEmbedder, but as a safeguard:
-						return fmt.Errorf("OpenAI model name is empty in config")
-					}
-
-					req := openai.EmbeddingRequest{
-						Input: currentBatch,
-						Model: apiModel,
-					}
-
-					logger.Debug("Sending request to OpenAI API", "worker_id", workerID, "num_texts", len(currentBatch), "model", e.config.Model)
-					resp, err := e.client.CreateEmbeddings(ctx, req)
-					if err == nil {
-						if len(resp.Data) != len(currentBatch) {
-							errMsg := fmt.Sprintf("OpenAI API returned %d embeddings for %d inputs", len(resp.Data), len(currentBatch))
-							logger.Error("Embeddings count mismatch from OpenAI", "worker_id", workerID, "error", errMsg, "batch_size", len(currentBatch))
-							attemptErr = fmt.Errorf(errMsg)
-							// This is a significant issue; decide if retry is appropriate or if it should fail fast.
-							// For now, we continue to retry, but this might warrant a different strategy.
-							continue
-						}
-						mu.Lock()
-						for i, data := range resp.Data {
-							// The API is expected to return embeddings in the same order as the input.
-							// The `data.Index` field in the response refers to the original index within that batch request.
-							allEmbeddings[originalIndices[i]] = data.Embedding
-						}
-						mu.Unlock()
-						attemptErr = nil // Success
-						logger.Debug("Successfully embedded batch", "worker_id", workerID, "batch_size", len(currentBatch))
-						break // Break retry loop
-					}
-					attemptErr = err
-					logger.Warn("Failed to create embeddings, retrying", "worker_id", workerID, "error", err, "attempt", attempt+1, "max_retries", e.config.Retries, "batch_size", len(currentBatch))
-					if attempt < e.config.Retries {
-						time.Sleep(e.config.RetryDelay)
-					} else {
-						logger.Error("Failed to create embeddings after all retries", "worker_id", workerID, "error", err, "batch_size", len(currentBatch))
-					}
-				}
-				// Clear batch for next set of texts for this worker
-				currentBatch = currentBatch[:0]
-				originalIndices = originalIndices[:0]
-				return attemptErr
+			// Rate limiting
+			if err := oe.limiter.Wait(ctx); err != nil {
+				errChan <- fmt.Errorf("rate limiting wait failed: %w", err)
+				return
 			}
 
-			for jobIndex := range jobs {
-				if ctx.Err() != nil {
-					return // Context cancelled, stop processing jobs
-				}
-				currentBatch = append(currentBatch, texts[jobIndex])
-				originalIndices = append(originalIndices, jobIndex)
+			// Make API call with retries
+			embeddings, err := oe.embedBatchWithRetry(ctx, batchTexts)
+			if err != nil {
+				errChan <- fmt.Errorf("batch %d failed: %w", batchIndex, err)
+				return
+			}
 
-				if len(currentBatch) >= e.config.BatchSize {
-					if err := processBatch(); err != nil {
-						mu.Lock()
-						if firstError == nil { // Record only the first error
-							firstError = err
-							cancel() // Signal other workers to stop
-						}
-						mu.Unlock()
-						return // Exit worker on error
-					}
+			// Store results in correct positions
+			startIdx := batchIndex * oe.batchSize
+			for j, embedding := range embeddings {
+				if startIdx+j < len(results) {
+					results[startIdx+j] = embedding
 				}
 			}
-			// Process any remaining items in the batch for this worker
-			if len(currentBatch) > 0 && ctx.Err() == nil { // Check ctx.Err() again before final batch
-				if err := processBatch(); err != nil {
-					mu.Lock()
-					if firstError == nil {
-						firstError = err
-						cancel()
-					}
-					mu.Unlock()
-					// return not strictly needed as loop is done, but for clarity
-				}
-			}
-		}(i)
+		}(i, batch)
 	}
 
+	// Wait for all batches to complete
 	wg.Wait()
+	close(errChan)
 
-	if firstError != nil {
-		return nil, fmt.Errorf("OpenAIEmbedder.Embed failed: %w", firstError)
-	}
-
-	// Sanity check: ensure all embeddings were populated.
-	// This can happen if job distribution or error handling logic is flawed.
-	for i, emb := range allEmbeddings {
-		if emb == nil && firstError == nil { // If no general error reported, but an embedding is missing
-			logger.Error("Nil embedding found post-processing without a reported error", "index", i, "text_snippet", texts[i][:min(20, len(texts[i]))])
-			// This indicates a bug in the concurrent processing logic.
-			return nil, fmt.Errorf("internal error: nil embedding for text index %d without explicit error", i)
+	// Check for errors
+	for err := range errChan {
+		if err != nil {
+			logger.Error("OpenAI embedding failed", "error", err)
+			return nil, err
 		}
 	}
 
-	logger.Info("Successfully embedded all texts with OpenAI", "num_texts", totalTexts, "model", e.config.Model)
-	return allEmbeddings, nil
+	logger.Debug("OpenAI embedding completed", "num_texts", len(texts), "num_results", len(results))
+	return results, nil
 }
 
-// min utility, can be moved to a util package if used elsewhere
-func min(a, b int) int {
-	if a < b {
-		return a
+// createBatches splits texts into batches of the configured size.
+func (oe *OpenAIEmbedder) createBatches(texts []string) [][]string {
+	var batches [][]string
+	for i := 0; i < len(texts); i += oe.batchSize {
+		end := i + oe.batchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+		batches = append(batches, texts[i:end])
 	}
-	return b
+	return batches
 }
+
+// embedBatchWithRetry makes an API call to embed a batch of texts with retry logic.
+func (oe *OpenAIEmbedder) embedBatchWithRetry(ctx context.Context, texts []string) ([][]float32, error) {
+	logger := util.FromContext(ctx)
+
+	maxRetries := 3
+	baseDelay := 1 * time.Second
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff
+			delay := time.Duration(baseDelay) * time.Duration(1<<uint(attempt-1))
+			logger.Debug("Retrying OpenAI API call", "attempt", attempt+1, "delay", delay)
+
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		embeddings, err := oe.embedBatch(ctx, texts)
+		if err == nil {
+			return embeddings, nil
+		}
+
+		// Check if this is a retryable error
+		if !isRetryableError(err) {
+			return nil, fmt.Errorf("non-retryable error: %w", err)
+		}
+
+		logger.Warn("OpenAI API call failed, will retry", "attempt", attempt+1, "error", err)
+	}
+
+	return nil, fmt.Errorf("OpenAI API call failed after %d attempts", maxRetries)
+}
+
+// embedBatch makes a single API call to embed a batch of texts.
+func (oe *OpenAIEmbedder) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	req := openai.EmbeddingRequest{
+		Input: texts,
+		Model: openai.EmbeddingModel(oe.model),
+	}
+
+	resp, err := oe.client.CreateEmbeddings(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
+	}
+
+	if len(resp.Data) != len(texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(resp.Data))
+	}
+
+	results := make([][]float32, len(resp.Data))
+	for i, data := range resp.Data {
+		// Convert []float64 to []float32
+		embedding := make([]float32, len(data.Embedding))
+		for j, val := range data.Embedding {
+			embedding[j] = float32(val)
+		}
+		results[i] = embedding
+	}
+
+	return results, nil
+}
+
+// isRetryableError determines if an error should trigger a retry.
+func isRetryableError(err error) bool {
+	// This is a simplified implementation. In practice, you'd want to check
+	// for specific OpenAI error codes like rate limiting, temporary failures, etc.
+	// The go-openai library might have specific error types we can check.
+	return true // For now, retry all errors
+}
+
+// Dimension implements the Embedder interface.
+func (oe *OpenAIEmbedder) Dimension() int {
+	oe.mu.RLock()
+	defer oe.mu.RUnlock()
+	return oe.dimension
+}
+
+// Ensure OpenAIEmbedder implements the Embedder interface.
+var _ semango.Embedder = (*OpenAIEmbedder)(nil)

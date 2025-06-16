@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/blevesearch/go-faiss"
-	"github.com/omneity-labs/semango/internal/util/log"
+	"github.com/omneity-labs/semango/internal/util"
 )
 
 // FaissIndex represents a FAISS vector index.
@@ -23,7 +23,7 @@ type FaissIndex struct {
 // Otherwise, a new index is created with the specified dimension and metric.
 // The metric argument should be one of the faiss.Metric... constants (e.g., faiss.MetricL2, faiss.MetricInnerProduct).
 func NewFaissIndex(ctx context.Context, path string, dim int, metric int) (*FaissIndex, error) {
-	logger := log.FromContext(ctx)
+	logger := util.FromContext(ctx)
 
 	// Check if index file exists
 	if _, err := os.Stat(path); err == nil {
@@ -62,13 +62,19 @@ func NewFaissIndex(ctx context.Context, path string, dim int, metric int) (*Fais
 	var idx faiss.Index
 	var err error
 
-	// The faiss.NewIndexFlat function takes the metric type as an int.
-	// faiss.MetricInnerProduct and faiss.MetricL2 are such int constants.
-	idx, err = faiss.NewIndexFlat(dim, metric)
+	// Create a Flat index wrapped with an IDMap so that AddWithIDs is supported.
+	// Using the factory helper allows us to compose this configuration in one call.
+	idxImpl, err := faiss.IndexFactory(dim, "IDMap2,Flat", metric)
+	if err != nil {
+		// Fallback: try the legacy description without the trailing '2' in case the
+		// underlying Faiss version expects just "IDMap".
+		idxImpl, err = faiss.IndexFactory(dim, "IDMap,Flat", metric)
+	}
+	idx = idxImpl
 
 	if err != nil {
 		logger.Error("Failed to create new FAISS index", "error", err, "path", path, "dimension", dim, "metric_code", metric)
-		return nil, fmt.Errorf("faiss.NewIndexFlat (metric %d): %w", metric, err)
+		return nil, fmt.Errorf("faiss.IndexFactory: %w", err)
 	}
 
 	logger.Info("Successfully created new FAISS index", "path", path, "dimension", dim, "metric_code", metric)
@@ -81,7 +87,7 @@ func NewFaissIndex(ctx context.Context, path string, dim int, metric int) (*Fais
 
 // Add vectors to the index.
 func (fi *FaissIndex) Add(ctx context.Context, vectors [][]float32, ids []int64) error {
-	logger := log.FromContext(ctx)
+	logger := util.FromContext(ctx)
 	if len(vectors) == 0 {
 		logger.Debug("No vectors to add to FAISS index")
 		return nil
@@ -117,7 +123,7 @@ func (fi *FaissIndex) Add(ctx context.Context, vectors [][]float32, ids []int64)
 // Search for k-nearest neighbors.
 // Returns distances, labels (IDs), and an error if any.
 func (fi *FaissIndex) Search(ctx context.Context, queryVector []float32, k int) ([]float32, []int64, error) {
-	logger := log.FromContext(ctx)
+	logger := util.FromContext(ctx)
 	if len(queryVector) != fi.dim {
 		return nil, nil, fmt.Errorf("query vector dimension mismatch: expected %d, got %d", fi.dim, len(queryVector))
 	}
@@ -133,7 +139,7 @@ func (fi *FaissIndex) Search(ctx context.Context, queryVector []float32, k int) 
 
 // Save the index to disk.
 func (fi *FaissIndex) Save(ctx context.Context) error {
-	logger := log.FromContext(ctx)
+	logger := util.FromContext(ctx)
 	err := faiss.WriteIndex(fi.index, fi.path)
 	if err != nil {
 		logger.Error("Failed to save FAISS index to disk", "error", err, "path", fi.path)
@@ -145,7 +151,7 @@ func (fi *FaissIndex) Save(ctx context.Context) error {
 
 // Close the index and release resources.
 func (fi *FaissIndex) Close(ctx context.Context) {
-	logger := log.FromContext(ctx)
+	logger := util.FromContext(ctx)
 	if fi.index != nil {
 		fi.index.Close() // blevesearch/go-faiss uses Close() to free memory
 		logger.Info("FAISS index closed", "path", fi.path)

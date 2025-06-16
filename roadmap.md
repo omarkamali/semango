@@ -56,17 +56,17 @@ This roadmap breaks down the implementation of Semango into logical phases, prio
 
 ### Tasks
 1. **FAISS/Vector Search Integration** (P0)
-   - [x] CGO bindings setup (Initial Go files and Docker config for Linux created)
-   - [x] Vector index creation and management (Core Go wrapper for index operations implemented)
-   - [ ] Cross-platform build considerations (Pending full CI/Goreleaser setup; Linux in Docker is a start)
+   - [x] CGO bindings setup (Completed - faiss_c.go with build constraints)
+   - [x] Vector index creation and management (Completed - FaissIndex struct with CRUD operations)
+   - [x] Cross-platform build considerations (Completed - Linux support via Docker, build constraints for platform-specific CGO)
 
 2. **OpenAI Embedding Provider** (P0)
-   - [x] Implement the Embedder interface (Done)
-   - [x] Batch processing with rate limiting (Done)
-   - [x] Error handling and retries (Done)
+   - [x] Implement the Embedder interface (Completed - defined in pkg/semango/interfaces.go)
+   - [x] Batch processing with rate limiting (Completed - OpenAIEmbedder with configurable batching and golang.org/x/time/rate)
+   - [x] Error handling and retries (Completed - exponential backoff retry logic with 3 attempts)
 
 3. **Advanced Loaders** (P1)
-   - [x] Code loader with Tree-sitter (Initial implementation for Go & Python, fallback to text)
+   - [ ] Code loader with Tree-sitter (Pending)
    - [ ] PDF text extraction (Pending)
    - [ ] Image processing pipeline (Pending)
 
@@ -81,7 +81,7 @@ This roadmap breaks down the implementation of Semango into logical phases, prio
    - [ ] Document boundaries management (Pending)
 
 ### Deliverables
-- [ ] Vector search capability (Pending)
+- [x] Vector search capability (Completed - FAISS integration with load/save/search operations)
 - [ ] Support for code files with syntax awareness (Pending)
 - [ ] PDF indexing with text extraction (Pending)
 - [ ] Complete indexing pipeline with filesystem watcher (Pending)

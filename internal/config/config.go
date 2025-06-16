@@ -10,9 +10,10 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
+
 	// "cuelang.org/go/cue/load" // No longer needed
-	"gopkg.in/yaml.v3"
 	cueErrors "cuelang.org/go/cue/errors"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds the application configuration, loaded from semango.yml
@@ -33,12 +34,12 @@ type Config struct {
 
 // EmbeddingConfig matches the 'embedding' section of semango.yml
 type EmbeddingConfig struct {
-	Provider         string `yaml:"provider" cue:"provider"`
-	Model            string `yaml:"model" cue:"model"`
-	LocalModelPath   string `yaml:"local_model_path" cue:"local_model_path"`
-	BatchSize        int    `yaml:"batch_size" cue:"batch_size"`
-	Concurrent       int    `yaml:"concurrent" cue:"concurrent"`
-	ModelCacheDir    string `yaml:"model_cache_dir" cue:"model_cache_dir"`
+	Provider       string `yaml:"provider" cue:"provider"`
+	Model          string `yaml:"model" cue:"model"`
+	LocalModelPath string `yaml:"local_model_path" cue:"local_model_path"`
+	BatchSize      int    `yaml:"batch_size" cue:"batch_size"`
+	Concurrent     int    `yaml:"concurrent" cue:"concurrent"`
+	ModelCacheDir  string `yaml:"model_cache_dir" cue:"model_cache_dir"`
 }
 
 // LexicalConfig matches the 'lexical' section of semango.yml
@@ -51,11 +52,11 @@ type LexicalConfig struct {
 
 // RerankerConfig matches the 'reranker' section of semango.yml
 type RerankerConfig struct {
-	Enabled              bool   `yaml:"enabled" cue:"enabled"`
-	Provider             string `yaml:"provider" cue:"provider"`
-	Model                string `yaml:"model" cue:"model"`
-	BatchSize            int    `yaml:"batch_size" cue:"batch_size"`
-	PerRequestOverride   bool   `yaml:"per_request_override" cue:"per_request_override"`
+	Enabled            bool   `yaml:"enabled" cue:"enabled"`
+	Provider           string `yaml:"provider" cue:"provider"`
+	Model              string `yaml:"model" cue:"model"`
+	BatchSize          int    `yaml:"batch_size" cue:"batch_size"`
+	PerRequestOverride bool   `yaml:"per_request_override" cue:"per_request_override"`
 }
 
 // HybridConfig matches the 'hybrid' section of semango.yml
@@ -67,8 +68,10 @@ type HybridConfig struct {
 
 // FilesConfig matches the 'files' section of semango.yml
 type FilesConfig struct {
-	Include []string `yaml:"include" cue:"include"`
-	Exclude []string `yaml:"exclude" cue:"exclude"`
+	Include      []string `yaml:"include" cue:"include"`
+	Exclude      []string `yaml:"exclude" cue:"exclude"`
+	ChunkSize    int      `yaml:"chunk_size" cue:"chunk_size"`
+	ChunkOverlap int      `yaml:"chunk_overlap" cue:"chunk_overlap"`
 }
 
 // ServerConfig matches the 'server' section of semango.yml
@@ -169,9 +172,15 @@ func Load(configPath string, cueSchemaPath string) (*Config, error) {
 		cueSchemaPath = DefaultCueSchemaPath
 	}
 
-	schemaBytes, err := os.ReadFile(cueSchemaPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read CUE schema file %s: %w", cueSchemaPath, err)
+	var schemaBytes []byte
+	if cueSchemaPath != "" {
+		if b, err := os.ReadFile(cueSchemaPath); err == nil {
+			schemaBytes = b
+		} else {
+			schemaBytes = embeddedCueSchema
+		}
+	} else {
+		schemaBytes = embeddedCueSchema
 	}
 
 	yamlData, err := os.ReadFile(configPath)
@@ -238,12 +247,12 @@ func Load(configPath string, cueSchemaPath string) (*Config, error) {
 func GetDefaultConfig() *Config {
 	return &Config{
 		Embedding: EmbeddingConfig{
-			Provider:         "openai",
-			Model:            "text-embedding-3-large",
-			LocalModelPath:   "models/e5-small.gguf",
-			BatchSize:        48,
-			Concurrent:       4,
-			ModelCacheDir:    "${SEMANGO_MODEL_DIR:=~/.cache/semango}",
+			Provider:       "openai",
+			Model:          "text-embedding-3-large",
+			LocalModelPath: "models/e5-small.gguf",
+			BatchSize:      48,
+			Concurrent:     4,
+			ModelCacheDir:  "${SEMANGO_MODEL_DIR:=~/.cache/semango}",
 		},
 		Lexical: LexicalConfig{
 			Enabled:   true,
@@ -252,10 +261,10 @@ func GetDefaultConfig() *Config {
 			BM25B:     0.75,
 		},
 		Reranker: RerankerConfig{
-			Enabled:              false,
-			Provider:             "cohere",
-			Model:                "rerank-english-v3.0",
-			BatchSize:            32,
+			Enabled:            false,
+			Provider:           "cohere",
+			Model:              "rerank-english-v3.0",
+			BatchSize:          32,
 			PerRequestOverride: true,
 		},
 		Hybrid: HybridConfig{
@@ -264,8 +273,10 @@ func GetDefaultConfig() *Config {
 			Fusion:        "rrf",
 		},
 		Files: FilesConfig{
-			Include: []string{"**/*.md", "**/*.go", "**/*.{png,jpg,jpeg}", "**/*.pdf"},
-			Exclude: []string{".git/**", "node_modules/**", "vendor/**"},
+			Include:      []string{"**/*.md", "**/*.go", "**/*.{png,jpg,jpeg}", "**/*.pdf"},
+			Exclude:      []string{".git/**", "node_modules/**", "vendor/**"},
+			ChunkSize:    1000,
+			ChunkOverlap: 200,
 		},
 		Server: ServerConfig{
 			Host: "0.0.0.0",
@@ -316,4 +327,4 @@ func WriteDefaultConfig(configPath string) error {
 		return fmt.Errorf("failed to write default config to %s: %w", configPath, err)
 	}
 	return nil
-} 
+}

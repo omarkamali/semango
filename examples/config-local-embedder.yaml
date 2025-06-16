@@ -1,0 +1,87 @@
+# Example configuration for using local embedders with semango
+# This demonstrates how to configure semango to use local sentence transformer models
+
+# Files configuration
+files:
+  # Directory to crawl for documents
+  root_dir: "./docs"
+  # File patterns to include
+  include_patterns:
+    - "*.md"
+    - "*.txt"
+    - "*.rst"
+  # File patterns to exclude
+  exclude_patterns:
+    - "*.tmp"
+    - ".git/*"
+  # Text chunking configuration
+  chunk_size: 1000      # Size of each text chunk
+  chunk_overlap: 200    # Overlap between chunks
+
+# Embedding configuration for local models
+embedding:
+  # Use local embedder provider
+  provider: "local"
+  
+  # Option 1: Use a Hugging Face model (will be downloaded automatically)
+  local_model_path: "sentence-transformers/all-MiniLM-L6-v2"
+  
+  # Option 2: Use a local model directory (uncomment to use)
+  # local_model_path: "/path/to/your/local/model"
+  
+  # Directory to cache downloaded models (optional)
+  model_cache_dir: "~/.cache/semango/models"
+  
+  # Batch size for embedding inference
+  batch_size: 32
+  
+  # Maximum sequence length (optional, defaults to 512)
+  # max_length: 512
+
+# Search configuration
+search:
+  # Number of results to return
+  limit: 10
+  # Minimum similarity score threshold
+  min_score: 0.1
+
+---
+# Alternative configuration using a different model
+
+# Files configuration (same as above)
+files:
+  root_dir: "./docs"
+  include_patterns: ["*.md", "*.txt"]
+  chunk_size: 500
+  chunk_overlap: 100
+
+# Embedding configuration with a larger model
+embedding:
+  provider: "local"
+  # Use a more powerful model (larger but better quality)
+  local_model_path: "BAAI/bge-base-en-v1.5"
+  model_cache_dir: "~/.cache/semango/models"
+  batch_size: 16  # Smaller batch size for larger model
+  
+search:
+  limit: 5
+  min_score: 0.2
+
+---
+# Configuration for using a local ONNX model directory
+
+files:
+  root_dir: "./documents"
+  include_patterns: ["*.pdf", "*.docx", "*.txt"]
+  chunk_size: 800
+  chunk_overlap: 150
+
+embedding:
+  provider: "local"
+  # Path to a local model directory containing ONNX files
+  local_model_path: "./models/my-sentence-transformer"
+  batch_size: 24
+  
+search:
+  limit: 15
+  min_score: 0.15 

@@ -2,8 +2,8 @@ package storage
 
 import (
 	"github.com/blevesearch/bleve/v2"
-	"github.com/blevesearch/bleve/v2/search"
 	"github.com/blevesearch/bleve/v2/document"
+	"github.com/blevesearch/bleve/v2/search"
 )
 
 // BleveIndex wraps a Bleve index instance.
@@ -31,6 +31,9 @@ func (b *BleveIndex) IndexDocument(id, text string, meta map[string]string) erro
 	doc := map[string]interface{}{
 		"text": text,
 		"meta": meta,
+	}
+	if p, ok := meta["path"]; ok {
+		doc["path"] = p
 	}
 	return b.idx.Index(id, doc)
 }
@@ -62,4 +65,4 @@ func (b *BleveIndex) GetDocument(id string) (*document.Document, error) {
 		return nil, nil
 	}
 	return d, nil
-} 
+}

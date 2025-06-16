@@ -2,14 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
+	"github.com/blevesearch/go-faiss"
+	"github.com/omneity-labs/semango/internal/api"
 	"github.com/omneity-labs/semango/internal/config"
 	"github.com/omneity-labs/semango/internal/ingest"
+	"github.com/omneity-labs/semango/internal/search"
 	"github.com/omneity-labs/semango/internal/storage"
 	"github.com/omneity-labs/semango/internal/util" // Import the logger package
 	"github.com/spf13/cobra"
@@ -67,6 +73,56 @@ var initCmd = &cobra.Command{
 	},
 }
 
+var serverCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Start the Semango search server.",
+	Long:  `Starts the HTTP server with REST API and web UI for searching indexed content.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if AppConfig == nil {
+			cfgErr := util.NewError("Configuration not loaded before server command")
+			util.LogError(util.Logger, cfgErr)
+			return cfgErr
+		}
+
+		slog.Info("Starting Semango server...", "host", AppConfig.Server.Host, "port", AppConfig.Server.Port)
+
+		// Initialize searcher with real search capabilities
+		searcher, err := search.NewSearcher(AppConfig)
+		if err != nil {
+			wrappedErr := util.WrapError(err, "Failed to initialize searcher")
+			util.LogError(util.Logger, wrappedErr)
+			return wrappedErr
+		}
+
+		// Create API server with nil UI filesystem (will use fallback)
+		server := api.NewServer(AppConfig, searcher, nil)
+
+		// Create context for graceful shutdown
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Handle shutdown signals
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+		go func() {
+			<-sigChan
+			slog.Info("Received shutdown signal, stopping server...")
+			cancel()
+		}()
+
+		// Start server
+		if err := server.Start(ctx); err != nil {
+			wrappedErr := util.WrapError(err, "Server failed to start")
+			util.LogError(util.Logger, wrappedErr)
+			return wrappedErr
+		}
+
+		slog.Info("Server stopped gracefully")
+		return nil
+	},
+}
+
 var indexCmd = &cobra.Command{
 	Use:   "index",
 	Short: "Index files based on the configuration.",
@@ -94,7 +150,7 @@ var indexCmd = &cobra.Command{
 		// Initialize the in-memory store
 		repStore := storage.NewInMemoryStore()
 
-		// Open or create Bleve index
+		// Open or create Bleve full-text index
 		bleveIdx, err := storage.OpenOrCreateBleveIndex(AppConfig.Lexical.IndexPath)
 		if err != nil {
 			wrappedErr := util.WrapError(err, "Failed to open/create Bleve index", slog.String("path", AppConfig.Lexical.IndexPath))
@@ -103,12 +159,67 @@ var indexCmd = &cobra.Command{
 		}
 		defer bleveIdx.Close()
 
+		// Initialize embedder with proper validation
+		var embedder ingest.Embedder
+		{
+			prov := AppConfig.Embedding.Provider
+			switch prov {
+			case "openai", "": // default to openai
+				apiKey := os.Getenv("OPENAI_API_KEY")
+				if apiKey == "" {
+					return util.NewError("OpenAI API key is required but not found in OPENAI_API_KEY environment variable")
+				}
+				openCfg := ingest.OpenAIConfig{
+					APIKey:     apiKey,
+					Model:      AppConfig.Embedding.Model,
+					BatchSize:  AppConfig.Embedding.BatchSize,
+					Concurrent: AppConfig.Embedding.Concurrent,
+				}
+				e, err := ingest.NewOpenAIEmbedder(openCfg)
+				if err != nil {
+					return util.WrapError(err, "Failed to create OpenAI embedder")
+				}
+				embedder = e
+			case "local":
+				if AppConfig.Embedding.LocalModelPath == "" {
+					return util.NewError("Local model path is required for local embedder provider")
+				}
+				localCfg := ingest.LocalEmbedderConfig{
+					ModelPath: AppConfig.Embedding.LocalModelPath,
+					CacheDir:  AppConfig.Embedding.ModelCacheDir,
+					BatchSize: AppConfig.Embedding.BatchSize,
+					MaxLength: 512, // Default max length
+				}
+				// Validate configuration
+				if err := ingest.ValidateModelConfig(localCfg); err != nil {
+					return util.WrapError(err, "Invalid local embedder configuration")
+				}
+				e, err := ingest.NewLocalEmbedder(localCfg)
+				if err != nil {
+					return util.WrapError(err, "Failed to create local embedder")
+				}
+				embedder = e
+			default:
+				return util.NewError(fmt.Sprintf("Unsupported embedder provider: %s. Supported providers: openai, local", prov))
+			}
+		}
+
+		// Open or create FAISS vector index
+		faissPath := filepath.Join("semango", "index", "faiss.index")
+		vecIdx, err := storage.NewFaissVectorIndex(context.Background(), faissPath, embedder.Dimension(), faiss.MetricInnerProduct)
+		if err != nil {
+			wrappedErr := util.WrapError(err, "Failed to open/create FAISS index", slog.String("path", faissPath))
+			util.LogError(util.Logger, wrappedErr)
+			return wrappedErr
+		}
+		defer vecIdx.Close()
+
 		go ingest.Crawl(AppConfig.Files, filePathChan, errChan)
 
 		var filesProcessedCount int
 		// totalRepresentations will now be derived from the store
 
-		textLoader := &ingest.TextLoader{}
+		textLoader := ingest.NewTextLoader(AppConfig.Files.ChunkSize, AppConfig.Files.ChunkOverlap)
 
 		for relPath := range filePathChan {
 			absPath := filepath.Join(rootDir, relPath)
@@ -144,6 +255,16 @@ var indexCmd = &cobra.Command{
 					if err := bleveIdx.IndexDocument(rep.ID, rep.Text, rep.Meta); err != nil {
 						// Log and continue
 						util.LogError(util.Logger, util.WrapError(err, "Failed to index document in Bleve", slog.String("id", rep.ID)))
+					}
+				}
+
+				// Vector embedding and upsert
+				vector, err := embedder.Embed(ctx, []string{rep.Text})
+				if err != nil {
+					util.LogError(util.Logger, util.WrapError(err, "Embedding failed", slog.String("id", rep.ID)))
+				} else if len(vector) == 1 {
+					if err := vecIdx.Upsert(ctx, rep.ID, vector[0]); err != nil {
+						util.LogError(util.Logger, util.WrapError(err, "Vector upsert failed", slog.String("id", rep.ID)))
 					}
 				}
 			}
@@ -198,25 +319,89 @@ var searchCmd = &cobra.Command{
 			return wrappedErr
 		}
 		defer bleveIdx.Close()
-		hits, err := bleveIdx.SearchText(query, size)
+
+		// Perform lexical search
+		lexHits, err := bleveIdx.SearchText(query, size)
 		if err != nil {
-			wrappedErr := util.WrapError(err, "Search failed", slog.String("query", query))
-			util.LogError(util.Logger, wrappedErr)
-			return wrappedErr
+			return util.WrapError(err, "Lexical search failed")
 		}
-		if len(hits) == 0 {
-			fmt.Println("No results found.")
-			return nil
+
+		// Vector index path same as indexing
+		faissPath := filepath.Join("semango", "index", "faiss.index")
+		// Initialize embedder (same logic as indexCmd)
+		var embedder ingest.Embedder
+		{
+			prov := AppConfig.Embedding.Provider
+			switch prov {
+			case "openai", "": // default to openai
+				apiKey := os.Getenv("OPENAI_API_KEY")
+				if apiKey == "" {
+					return util.NewError("OpenAI API key is required but not found in OPENAI_API_KEY environment variable")
+				}
+				openCfg := ingest.OpenAIConfig{
+					APIKey:     apiKey,
+					Model:      AppConfig.Embedding.Model,
+					BatchSize:  AppConfig.Embedding.BatchSize,
+					Concurrent: AppConfig.Embedding.Concurrent,
+				}
+				e, err := ingest.NewOpenAIEmbedder(openCfg)
+				if err != nil {
+					return util.WrapError(err, "Failed to create OpenAI embedder")
+				}
+				embedder = e
+			case "local":
+				if AppConfig.Embedding.LocalModelPath == "" {
+					return util.NewError("Local model path is required for local embedder provider")
+				}
+				localCfg := ingest.LocalEmbedderConfig{
+					ModelPath: AppConfig.Embedding.LocalModelPath,
+					CacheDir:  AppConfig.Embedding.ModelCacheDir,
+					BatchSize: AppConfig.Embedding.BatchSize,
+					MaxLength: 512, // Default max length
+				}
+				// Validate configuration
+				if err := ingest.ValidateModelConfig(localCfg); err != nil {
+					return util.WrapError(err, "Invalid local embedder configuration")
+				}
+				e, err := ingest.NewLocalEmbedder(localCfg)
+				if err != nil {
+					return util.WrapError(err, "Failed to create local embedder")
+				}
+				embedder = e
+			default:
+				return util.NewError(fmt.Sprintf("Unsupported embedder provider: %s. Supported providers: openai, local", prov))
+			}
 		}
-		fmt.Printf("Top %d results for query: %q\n", len(hits), query)
-		for i, hit := range hits {
-			// Fetch the document to get the preview
-			doc, err := bleveIdx.GetDocument(hit.ID)
-			var preview string
-			if err == nil && doc != nil {
-				for _, field := range doc.Fields {
-					if field.Name() == "text" {
-						val := string(field.Value())
+
+		queryVecs, err := embedder.Embed(context.Background(), []string{query})
+		if err != nil {
+			return util.WrapError(err, "Embedding query failed")
+		}
+		vecIdx, err := storage.NewFaissVectorIndex(context.Background(), faissPath, embedder.Dimension(), faiss.MetricInnerProduct)
+		if err != nil {
+			return util.WrapError(err, "Opening vector index failed")
+		}
+		defer vecIdx.Close()
+		vecResults, _ := vecIdx.Search(context.Background(), queryVecs[0], size)
+
+		// Build JSON structure
+		type hit struct {
+			ID    string  `json:"id"`
+			Score float32 `json:"score"`
+			Text  string  `json:"text"`
+		}
+		type output struct {
+			Lexical []hit `json:"lexical"`
+			Vector  []hit `json:"vector"`
+		}
+
+		out := output{}
+		for _, h := range lexHits {
+			preview := ""
+			if doc, err := bleveIdx.GetDocument(h.ID); err == nil && doc != nil {
+				for _, f := range doc.Fields {
+					if f.Name() == "text" {
+						val := string(f.Value())
 						if len(val) > 80 {
 							preview = val[:77] + "..."
 						} else {
@@ -226,8 +411,24 @@ var searchCmd = &cobra.Command{
 					}
 				}
 			}
-			fmt.Printf("%2d. ID: %s, Score: %.4f\n    Preview: %s\n", i+1, hit.ID, hit.Score, preview)
+			out.Lexical = append(out.Lexical, hit{ID: h.ID, Score: float32(h.Score), Text: preview})
 		}
+		for _, vr := range vecResults {
+			fullText := ""
+			if doc, err := bleveIdx.GetDocument(vr.ID); err == nil && doc != nil {
+				for _, f := range doc.Fields {
+					if f.Name() == "text" {
+						fullText = string(f.Value())
+						break
+					}
+				}
+			}
+			out.Vector = append(out.Vector, hit{ID: vr.ID, Score: vr.Score, Text: fullText})
+		}
+
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(out)
 		return nil
 	},
 }
@@ -255,6 +456,7 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(indexCmd)
 	rootCmd.AddCommand(searchCmd)
+	rootCmd.AddCommand(serverCmd)
 	initCmd.Flags().StringP("file", "f", config.DefaultConfigPath, "Path to write the configuration file")
 	rootCmd.PersistentFlags().StringP("config", "c", config.DefaultConfigPath, "Path to the configuration file")
 }

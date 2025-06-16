@@ -34,17 +34,3 @@ type DocumentHeader struct {
 	Path string `json:"path"`
 	// Other fields like Source, LastModified etc. might go here.
 }
-
-// Loader defines the interface for file content loaders.
-// Implementations are responsible for extracting representations
-// from different file types.
-type Loader interface {
-	// Extensions returns a list of file extensions (e.g., ".txt", ".md")
-	// or glob patterns that this loader can handle.
-	Extensions() []string
-
-	// Load reads a file at the given path and returns one or more
-	// Representations. A single file might produce multiple representations
-	// (e.g., a PDF with multiple pages, or a source code file chunked by functions).
-	Load(ctx context.Context, path string) ([]Representation, error)
-}

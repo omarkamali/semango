@@ -19,7 +19,7 @@ reranker:
 hybrid:
     vector_weight: 0.7
     lexical_weight: 0.3
-    fusion: rrf
+    fusion: linear
 files:
     include:
         - '**/*.md'
