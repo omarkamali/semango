@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  semango:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: semango_dev
+    volumes:
+      - .:/app
+      - semango_data:/app/data # For persistent data like indexes, DBs
+    ports:
+      - "9991:8181"
+      - "50051:50051"
+    # Environment variables can be loaded from a .env file or defined here
+    # env_file:
+    #   - .env
+    # depends_on:
+    #   - redis # Uncomment if/when Redis is added
+    tty: true # Keeps the container running, similar to tail -f /dev/null
+    stdin_open: true # Keeps the container running
+
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: semango_redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+
+volumes:
+  semango_data: # Stores FAISS index, BoltDB, etc.
+  # redis_data: # Persistent storage for Redis 

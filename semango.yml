@@ -1,0 +1,47 @@
+embedding:
+    provider: openai
+    model: text-embedding-3-large
+    local_model_path: models/e5-small.gguf
+    batch_size: 48
+    concurrent: 4
+    model_cache_dir: ${SEMANGO_MODEL_DIR:=~/.cache/semango}
+lexical:
+    enabled: true
+    index_path: ./semango/index/bleve
+    bm25_k1: 1.2
+    bm25_b: 0.75
+reranker:
+    enabled: false
+    provider: cohere
+    model: rerank-english-v3.0
+    batch_size: 32
+    per_request_override: true
+hybrid:
+    vector_weight: 0.7
+    lexical_weight: 0.3
+    fusion: rrf
+files:
+    include:
+        - '**/*.md'
+        - '**/*.go'
+        - '**/*.{png,jpg,jpeg}'
+        - '**/*.pdf'
+    exclude:
+        - .git/**
+        - node_modules/**
+        - vendor/**
+server:
+    host: 0.0.0.0
+    port: 8181
+    auth:
+        type: token
+        token_env: SEMANGO_TOKENS
+    tls_cert: ""
+    tls_key: ""
+plugins:
+    - plugins/
+    - ../shared/my_custom.so
+ui:
+    enabled: true
+mcp:
+    enabled: true
