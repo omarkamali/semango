@@ -105,6 +105,37 @@ jobs:
             libopenblas-dev \
             libgflags-dev
 
+      - name: Cache FAISS
+        id: cache-faiss
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.faiss-install
+          key: ${{ runner.os }}-faiss-1.8.0-v2
+
+      - name: Build FAISS C API
+        if: steps.cache-faiss.outputs.cache-hit != 'true'
+        run: |
+          curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
+          tar -xzf faiss.tar.gz
+          cd faiss-1.8.0
+          cmake -B build \
+            -DFAISS_ENABLE_GPU=OFF \
+            -DFAISS_ENABLE_PYTHON=OFF \
+            -DFAISS_ENABLE_C_API=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$HOME/.faiss-install .
+          make -C build -j$(nproc) faiss_c
+          make -C build install
+          cp -r c_api $HOME/.faiss-install/include/faiss
+
+      - name: Install FAISS to system
+        run: |
+          sudo cp -r ~/.faiss-install/lib/* /usr/local/lib/
+          sudo cp -r ~/.faiss-install/include/* /usr/local/include/
+          sudo ldconfig
+
       - name: Download UI artifacts
         uses: actions/download-artifact@v4
         with:
@@ -128,6 +159,8 @@ jobs:
         run: go test -v -race -coverprofile=coverage.out ./...
         env:
           CGO_ENABLED: 1
+          CGO_CPPFLAGS: -I/usr/local/include
+          CGO_LDFLAGS: -L/usr/local/lib -lfaiss_c
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -157,6 +190,37 @@ jobs:
             libopenblas-dev \
             libgflags-dev
 
+      - name: Cache FAISS
+        id: cache-faiss
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.faiss-install
+          key: ${{ runner.os }}-faiss-1.8.0-v2
+
+      - name: Build FAISS C API
+        if: steps.cache-faiss.outputs.cache-hit != 'true'
+        run: |
+          curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
+          tar -xzf faiss.tar.gz
+          cd faiss-1.8.0
+          cmake -B build \
+            -DFAISS_ENABLE_GPU=OFF \
+            -DFAISS_ENABLE_PYTHON=OFF \
+            -DFAISS_ENABLE_C_API=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$HOME/.faiss-install .
+          make -C build -j$(nproc) faiss_c
+          make -C build install
+          cp -r c_api $HOME/.faiss-install/include/faiss
+
+      - name: Install FAISS to system
+        run: |
+          sudo cp -r ~/.faiss-install/lib/* /usr/local/lib/
+          sudo cp -r ~/.faiss-install/include/* /usr/local/include/
+          sudo ldconfig
+
       - name: Download UI artifacts
         uses: actions/download-artifact@v4
         with:
@@ -168,8 +232,10 @@ jobs:
           go build -v -ldflags="-s -w" -o semango ./cmd/semango
         env:
           CGO_ENABLED: 1
+          CGO_CPPFLAGS: -I/usr/local/include
+          CGO_LDFLAGS: -L/usr/local/lib -lfaiss_c
 
       - name: Verify binary
         run: |
-          ./semango --help
+          LD_LIBRARY_PATH=/usr/local/lib ./semango --help
           echo "Build successful!"
