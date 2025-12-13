@@ -1,3 +1,6 @@
+//go:build cgo && linux && amd64
+// +build cgo,linux,amd64
+
 package storage
 
 import (

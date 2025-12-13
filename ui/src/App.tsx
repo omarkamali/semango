@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { Search, Moon, Sun, FileText, Code, Image, Music, BookOpen } from 'lucide-react'
-import { cn } from './lib/utils'
 import { ApiDocs } from './components/ApiDocs'
 
 interface SearchResult {
@@ -12,7 +11,7 @@ interface SearchResult {
 		meta?: Record<string, string>
 	}
 	chunk: string
-	highlights?: Record<string, any>
+	highlights?: Record<string, unknown>
 }
 
 interface SearchResponse {
