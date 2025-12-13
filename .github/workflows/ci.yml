@@ -123,19 +123,18 @@ jobs:
       - name: Build FAISS C API
         if: steps.cache-faiss.outputs.cache-hit != 'true'
         run: |
-          curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
-          tar -xzf faiss.tar.gz
-          cd faiss-1.8.0
-          cmake -B build \
+          cmake -S faiss -B faiss/build \
             -DFAISS_ENABLE_GPU=OFF \
             -DFAISS_ENABLE_PYTHON=OFF \
             -DFAISS_ENABLE_C_API=ON \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=$HOME/.faiss-install .
-          make -C build -j$(nproc) faiss_c
-          make -C build install
-          cp -r c_api $HOME/.faiss-install/include/faiss
+            -DCMAKE_INSTALL_PREFIX=$HOME/.faiss-install
+          cmake --build faiss/build --target faiss_c -- -j$(nproc)
+          cmake --build faiss/build --target install
+          mkdir -p $HOME/.faiss-install/lib
+          find faiss/build/c_api -maxdepth 1 -name "libfaiss_c*.so*" -exec cp -a {} $HOME/.faiss-install/lib/ \;
+          cp -r faiss/c_api $HOME/.faiss-install/include/faiss
 
       - name: Install FAISS to system
         run: |
@@ -208,19 +207,18 @@ jobs:
       - name: Build FAISS C API
         if: steps.cache-faiss.outputs.cache-hit != 'true'
         run: |
-          curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
-          tar -xzf faiss.tar.gz
-          cd faiss-1.8.0
-          cmake -B build \
+          cmake -S faiss -B faiss/build \
             -DFAISS_ENABLE_GPU=OFF \
             -DFAISS_ENABLE_PYTHON=OFF \
             -DFAISS_ENABLE_C_API=ON \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=$HOME/.faiss-install .
-          make -C build -j$(nproc) faiss_c
-          make -C build install
-          cp -r c_api $HOME/.faiss-install/include/faiss
+            -DCMAKE_INSTALL_PREFIX=$HOME/.faiss-install
+          cmake --build faiss/build --target faiss_c -- -j$(nproc)
+          cmake --build faiss/build --target install
+          mkdir -p $HOME/.faiss-install/lib
+          find faiss/build/c_api -maxdepth 1 -name "libfaiss_c*.so*" -exec cp -a {} $HOME/.faiss-install/lib/ \;
+          cp -r faiss/c_api $HOME/.faiss-install/include/faiss
 
       - name: Install FAISS to system
         run: |
