@@ -134,7 +134,7 @@ jobs:
         with:
           path: |
             ~/.faiss-install
-          key: ${{ runner.os }}-faiss-1.8.0-v2
+          key: ${{ runner.os }}-faiss-1.8.0-v3
 
       - name: Build FAISS C API
         if: steps.cache-faiss.outputs.cache-hit != 'true'
@@ -151,6 +151,16 @@ jobs:
           mkdir -p $HOME/.faiss-install/lib
           find faiss/build/c_api -maxdepth 1 -name "libfaiss_c*.so*" -exec cp -a {} $HOME/.faiss-install/lib/ \;
           cp -r faiss/c_api $HOME/.faiss-install/include/faiss
+
+      - name: Ensure custom FAISS headers
+        run: |
+          mkdir -p $HOME/.faiss-install/include/faiss/c_api
+          cp faiss/c_api/IndexIVF_c_ex.h $HOME/.faiss-install/include/faiss/c_api/
+
+      - name: Ensure custom FAISS headers
+        run: |
+          mkdir -p $HOME/.faiss-install/include/faiss/c_api
+          cp faiss/c_api/IndexIVF_c_ex.h $HOME/.faiss-install/include/faiss/c_api/
 
       - name: Install FAISS to system
         run: |
