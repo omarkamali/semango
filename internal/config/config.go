@@ -13,6 +13,7 @@ import (
 
 	// "cuelang.org/go/cue/load" // No longer needed
 	cueErrors "cuelang.org/go/cue/errors"
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,6 +31,7 @@ type Config struct {
 	Plugins   []string        `yaml:"plugins"`
 	UI        UIConfig        `yaml:"ui"`
 	MCP       MCPConfig       `yaml:"mcp"`
+	Tabular   TabularConfig   `yaml:"tabular"`
 }
 
 // EmbeddingConfig matches the 'embedding' section of semango.yml
@@ -64,6 +66,14 @@ type HybridConfig struct {
 	VectorWeight  float64 `yaml:"vector_weight" cue:"vector_weight"`
 	LexicalWeight float64 `yaml:"lexical_weight" cue:"lexical_weight"`
 	Fusion        string  `yaml:"fusion" cue:"fusion"`
+}
+
+// TabularConfig matches the 'tabular' section of semango.yml
+type TabularConfig struct {
+	MaxRowsEmbedded int    `yaml:"max_rows_embedded" cue:"max_rows_embedded"`
+	Sampling        string `yaml:"sampling" cue:"sampling"`
+	MinTextTokens   int    `yaml:"min_text_tokens" cue:"min_text_tokens"`
+	Delimiter       string `yaml:"delimiter" cue:"delimiter"`
 }
 
 // FilesConfig matches the 'files' section of semango.yml
@@ -165,6 +175,15 @@ func expandWithDefault(s string) string {
 
 // Load attempts to load configuration from the given path and validates it against the CUE schema.
 func Load(configPath string, cueSchemaPath string) (*Config, error) {
+    // Load environment variables from file if available.
+    // Priority: SEMANGO_ENV_FILE (if set) > .env (if present in working directory)
+    if customEnv := os.Getenv("SEMANGO_ENV_FILE"); customEnv != "" {
+        // Ignore error to keep behavior non-fatal when the file isn't found
+        _ = godotenv.Load(customEnv)
+    } else {
+        _ = godotenv.Load(".env")
+    }
+
 	if configPath == "" {
 		configPath = DefaultConfigPath
 	}
@@ -247,7 +266,7 @@ func Load(configPath string, cueSchemaPath string) (*Config, error) {
 func GetDefaultConfig() *Config {
 	return &Config{
 		Embedding: EmbeddingConfig{
-			Provider:       "openai",
+			Provider:       "local",
 			Model:          "text-embedding-3-large",
 			LocalModelPath: "models/e5-small.gguf",
 			BatchSize:      48,
@@ -270,10 +289,10 @@ func GetDefaultConfig() *Config {
 		Hybrid: HybridConfig{
 			VectorWeight:  0.7,
 			LexicalWeight: 0.3,
-			Fusion:        "rrf",
+			Fusion:        "linear",
 		},
 		Files: FilesConfig{
-			Include:      []string{"**/*.md", "**/*.go", "**/*.{png,jpg,jpeg}", "**/*.pdf"},
+			Include:      []string{"**/*.md", "**/*.go", "**/*.{png,jpg,jpeg}", "**/*.pdf", "**/*.csv", "**/*.json", "**/*.jsonl", "**/*.parquet"},
 			Exclude:      []string{".git/**", "node_modules/**", "vendor/**"},
 			ChunkSize:    1000,
 			ChunkOverlap: 200,
@@ -297,6 +316,12 @@ func GetDefaultConfig() *Config {
 		},
 		MCP: MCPConfig{
 			Enabled: true,
+		},
+		Tabular: TabularConfig{
+			MaxRowsEmbedded: 1000,
+			Sampling:        "random",
+			MinTextTokens:   5,
+			Delimiter:       "",
 		},
 	}
 }

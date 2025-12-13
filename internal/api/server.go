@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/omneity-labs/semango/internal/config"
-	"github.com/omneity-labs/semango/internal/search"
-	"github.com/omneity-labs/semango/internal/util"
+	"github.com/omarkamali/semango/internal/config"
+	"github.com/omarkamali/semango/internal/search"
+	"github.com/omarkamali/semango/internal/util"
 )
 
 //go:embed all:ui

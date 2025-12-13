@@ -18,7 +18,7 @@ func init() {
 }
 
 // Example of how to use it from other packages:
-// import "github.com/omneity-labs/semango/internal/util"
+// import "github.com/omarkamali/semango/internal/util"
 // ...
 // util.Logger.Info("Something happened", "key", "value")
 // or if SetDefault was called:

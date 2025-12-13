@@ -17,6 +17,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     swig \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Node.js and Yarn for building the UI
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs \
+    npm \
+    && npm install -g yarn \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install CUE CLI
 RUN CUE_VERSION="0.9.2" && \
     ARCH=$(dpkg --print-architecture) && \

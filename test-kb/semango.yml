@@ -39,3 +39,8 @@ server:
         token_env: SEMANGO_TOKENS
     tls_cert: ""
     tls_key: ""
+tabular:
+    max_rows_embedded: 1000
+    sampling: random
+    min_text_tokens: 5
+    delimiter: ","

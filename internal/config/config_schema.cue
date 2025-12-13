@@ -14,10 +14,11 @@ package config
 	plugins?:  [...string]
 	ui:        #UIConfig
 	mcp:       #MCPConfig
+	tabular:   #TabularConfig
 }
 
 #EmbeddingConfig: {
-	provider:         string | *"openai" | "cohere" | "voyage" | "local"
+	provider:         string | *"local" | "openai" | "cohere" | "voyage"
 	model:            string
 	local_model_path: string | *"models/e5-small.gguf"
 	batch_size:       int & >=1 & <=512 | *48
@@ -43,11 +44,11 @@ package config
 #HybridConfig: {
 	vector_weight:  float & >=0.0 & <=1.0 | *0.7
 	lexical_weight: float & >=0.0 & <=1.0 | *0.3
-	fusion:         string | *"rrf" | "linear"
+	fusion:         string | *"linear" | "rrf"
 }
 
 #FilesConfig: {
-	include: [...string] | *["**/*.md", "**/*.go", "**/*.{png,jpg,jpeg}", "**/*.pdf"]
+	include: [...string] | *["**/*.md", "**/*.go", "**/*.{png,jpg,jpeg}", "**/*.pdf", "**/*.csv", "**/*.json", "**/*.jsonl", "**/*.parquet"]
 	exclude: [...string] | *[".git/**", "node_modules/**", "vendor/**"]
 	chunk_size: int | *1000
 	chunk_overlap: int | *200
@@ -72,4 +73,11 @@ package config
 
 #MCPConfig: {
 	enabled: bool | *true
+}
+
+#TabularConfig: {
+	max_rows_embedded: int & >=1 | *50000
+	sampling:          string | *"random" | "stratified"
+	min_text_tokens:   int & >=1 | *5
+	delimiter?:        string | *","  // for CSV/TSV; "\t" for TSV
 } 

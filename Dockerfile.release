@@ -1,0 +1,118 @@
+# Semango Production Dockerfile
+# Author: Omar Kamali <semango@omarkama.li>
+# Multi-stage build for minimal production image
+
+# ============================================
+# Stage 1: Build UI
+# ============================================
+FROM node:20-slim AS ui-builder
+
+WORKDIR /build/ui
+COPY ui/package.json ui/yarn.lock ./
+RUN yarn install --frozen-lockfile --production=false
+
+COPY ui/ ./
+RUN yarn build
+
+# ============================================
+# Stage 2: Build Go binary
+# ============================================
+FROM golang:1.23-bookworm AS go-builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    libopenblas-dev \
+    libgflags-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build FAISS C API
+ENV FAISS_VERSION=1.8.0
+RUN curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v${FAISS_VERSION}.tar.gz" -o faiss.tar.gz && \
+    tar -xzf faiss.tar.gz && \
+    cd faiss-${FAISS_VERSION} && \
+    cmake -B build \
+        -DFAISS_ENABLE_GPU=OFF \
+        -DFAISS_ENABLE_PYTHON=OFF \
+        -DFAISS_ENABLE_C_API=ON \
+        -DBUILD_SHARED_LIBS=ON \
+        -DCMAKE_BUILD_TYPE=Release . && \
+    make -C build -j$(nproc) faiss_c && \
+    make -C build install && \
+    cp -r c_api /usr/local/include/faiss && \
+    cd / && rm -rf faiss.tar.gz faiss-${FAISS_VERSION}
+
+WORKDIR /build
+
+# Copy go.mod first for better caching
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# Copy UI build
+COPY --from=ui-builder /build/ui/dist ./internal/api/ui/
+
+# Copy source code
+COPY . .
+
+# Build binary
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+RUN CGO_ENABLED=1 go build \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
+    -o /semango ./cmd/semango
+
+# ============================================
+# Stage 3: Production image
+# ============================================
+FROM debian:bookworm-slim
+
+LABEL org.opencontainers.image.title="Semango"
+LABEL org.opencontainers.image.description="Hybrid search engine combining lexical and semantic search"
+LABEL org.opencontainers.image.url="https://github.com/omarkamali/semango"
+LABEL org.opencontainers.image.source="https://github.com/omarkamali/semango"
+LABEL org.opencontainers.image.vendor="Omar Kamali"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL maintainer="Omar Kamali <semango@omarkama.li>"
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libopenblas0 \
+    libgomp1 \
+    tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy FAISS libraries from builder
+COPY --from=go-builder /usr/local/lib/libfaiss* /usr/local/lib/
+RUN ldconfig
+
+# Create non-root user
+RUN useradd -m -u 1000 -s /bin/bash semango
+
+# Create data directories
+RUN mkdir -p /data /config && chown -R semango:semango /data /config
+
+# Copy binary
+COPY --from=go-builder /semango /usr/local/bin/semango
+
+# Switch to non-root user
+USER semango
+WORKDIR /data
+
+# Default configuration
+ENV SEMANGO_CONFIG=/config/semango.yml
+
+# Expose ports
+EXPOSE 8181 50051
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8181/health || exit 1
+
+# Default command
+ENTRYPOINT ["semango"]
+CMD ["server"]

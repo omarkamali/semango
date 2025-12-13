@@ -1,7 +1,6 @@
 embedding:
-    provider: openai
-    model: text-embedding-3-large
-    local_model_path: models/e5-small.gguf
+    provider: local
+    local_model_path: "onnx-models/all-MiniLM-L6-v2-onnx"
     batch_size: 48
     concurrent: 4
     model_cache_dir: ${SEMANGO_MODEL_DIR:=~/.cache/semango}
@@ -26,10 +25,19 @@ files:
         - '**/*.go'
         - '**/*.{png,jpg,jpeg}'
         - '**/*.pdf'
+        - '**/*.csv'
+        - '**/*.tsv'
+        - '**/*.json'
+        - '**/*.jsonl'
+        - '**/*.parquet'
+        - '**/*.sqlite'
     exclude:
         - .git/**
         - node_modules/**
         - vendor/**
+        - semango/**
+    chunk_size: 1000
+    chunk_overlap: 200
 server:
     host: 0.0.0.0
     port: 8181
@@ -49,4 +57,4 @@ tabular:
     max_rows_embedded: 1000
     sampling: random
     min_text_tokens: 5
-    delimiter: ","
+    delimiter: ""

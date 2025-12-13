@@ -32,7 +32,7 @@ Thumbs.db
 /internal/api/ui/
 
 # Semango data
-/semango/
+# /semango/
 
 # Logs
 *.log
@@ -46,4 +46,25 @@ Thumbs.db
 
 # Cache directories
 .cache/
-node_modules/ 
+node_modules/
+
+# Release artifacts
+dist/
+*.tar.gz
+*.zip
+checksums.txt
+
+# goreleaser
+/dist/
+
+# Coverage reports
+coverage.out
+coverage.html
+
+# Temporary files
+tmp/
+*.tmp
+
+# Local development
+.devcontainer/
+*.local.yml 

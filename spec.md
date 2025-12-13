@@ -11,14 +11,14 @@
 ```bash
 ## macOS / Linux
 # 1. Download the binary
-curl -L "https://github.com/omneity-labs/semango/releases/download/v1.0.0/semango-$(uname -s)-$(uname -m)" \
+curl -L "https://github.com/omarkamali/semango/releases/download/v1.0.0/semango-$(uname -s)-$(uname -m)" \
      -o semango && chmod +x semango
 # 2. Run the self-install command
 ./semango install
 
 ## Windows (PowerShell)
 # 1. Download the binary
-Invoke-WebRequest -Uri "https://github.com/omneity-labs/semango/releases/download/v1.0.0/semango-windows-amd64.exe" -OutFile semango.exe
+Invoke-WebRequest -Uri "https://github.com/omarkamali/semango/releases/download/v1.0.0/semango-windows-amd64.exe" -OutFile semango.exe
 # 2. Run the self-install command
 .\\semango.exe install
 ```

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/blevesearch/go-faiss"
-	"github.com/omneity-labs/semango/internal/ingest"
+	"github.com/omarkamali/semango/internal/ingest"
 )
 
 func TestFaissIntegrationWithOpenAI(t *testing.T) {

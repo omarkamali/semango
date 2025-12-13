@@ -2,12 +2,51 @@
 
 This document describes how to build Semango with its embedded React UI.
 
+**Author:** Omar Kamali <semango@omarkama.li>
+
 ## Prerequisites
 
-- Go 1.21 or later
-- Node.js 18 or later
-- Yarn package manager
-- FAISS and ONNX Runtime libraries (for CGO)
+### Required Software
+
+| Software | Minimum Version | Notes |
+|----------|-----------------|-------|
+| Go | 1.23+ | CGO must be enabled |
+| Node.js | 20+ | For UI build |
+| Yarn | 1.22+ | Package manager |
+| GCC/Clang | - | C compiler for CGO |
+| CMake | 3.20+ | For building FAISS |
+
+### System Libraries
+
+#### macOS (Homebrew)
+```bash
+brew install openblas cmake
+# FAISS must be built from source (see install_faiss.sh)
+```
+
+#### Ubuntu/Debian
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+    build-essential \
+    cmake \
+    libopenblas-dev \
+    libgflags-dev \
+    tesseract-ocr \
+    libleptonica-dev
+```
+
+#### FAISS Installation
+See `install_faiss.sh` for building FAISS with C API support:
+```bash
+./install_faiss.sh
+```
+
+#### ONNX Runtime (for local embeddings)
+See `install_onnxruntime.sh` for installation:
+```bash
+./install_onnxruntime.sh
+```
 
 ## Quick Build
 
@@ -25,6 +64,12 @@ make clean
 
 # Run tests
 make test
+
+# Run linters
+make lint
+
+# Show version info
+make version
 
 # Development targets
 make dev-ui      # Start UI dev server

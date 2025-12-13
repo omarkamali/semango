@@ -30,6 +30,7 @@ package config
   plugins?: _
   ui?: _
   mcp?: _
+  tabular?: _
 }
 `
 	if err := os.WriteFile(tempCuePath, []byte(cueSchema), 0644); err != nil {
@@ -72,4 +73,4 @@ lexical:
 	if cfg2.Embedding.ModelCacheDir != "/tmp/override_semango" {
 		t.Errorf("expected ModelCacheDir=/tmp/override_semango, got %q", cfg2.Embedding.ModelCacheDir)
 	}
-} 
+}

@@ -1,0 +1,56 @@
+# Semango golangci-lint configuration
+# Author: Omar Kamali <semango@omarkama.li>
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - bodyclose
+    - noctx
+    - prealloc
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment  # Too noisy for now
+  goimports:
+    local-prefixes: github.com/omarkamali/semango
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - errcheck
+        - bodyclose
+    # Exclude vendor and generated files
+    - path: vendor/
+      linters:
+        - all
+    - path: internal/api/ui/
+      linters:
+        - all
+    # Allow TODO comments
+    - source: "TODO"
+      linters:
+        - godox
+
+  max-issues-per-linter: 50
+  max-same-issues: 10

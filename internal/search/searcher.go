@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/blevesearch/go-faiss"
-	"github.com/omneity-labs/semango/internal/config"
-	"github.com/omneity-labs/semango/internal/ingest"
-	"github.com/omneity-labs/semango/internal/storage"
-	"github.com/omneity-labs/semango/internal/util"
+	"github.com/omarkamali/semango/internal/config"
+	"github.com/omarkamali/semango/internal/ingest"
+	"github.com/omarkamali/semango/internal/storage"
+	"github.com/omarkamali/semango/internal/util"
 )
 
 // Searcher handles search operations using the real search implementation

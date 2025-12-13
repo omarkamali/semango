@@ -1,4 +1,4 @@
-.PHONY: build run clean test ui-build ui-clean all
+.PHONY: build run clean test ui-build ui-clean all lint version
 
 BINARY_NAME=semango
 CMD_PATH=./cmd/semango
@@ -6,14 +6,21 @@ UI_DIR=ui
 UI_DIST_DIR=$(UI_DIR)/dist
 EMBED_UI_DIR=internal/api/ui
 
+# Version info
+VERSION ?= $(shell cat VERSION 2>/dev/null || echo "dev")
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS=-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
+
 CGO_LDFLAGS_FAISS=-L/app/libs -lfaiss_c -Wl,-rpath,/app/libs
 CGO_LDFLAGS_ONNX=-L/app/libs -lonnxruntime -Wl,-rpath,/app/libs
 CGO_LDFLAGS_ALL=$(CGO_LDFLAGS_FAISS) $(CGO_LDFLAGS_ONNX)
+CGO_CPPFLAGS_ALL=-I/app
 
 all: build
 
 test:
-	CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go test ./...
+	CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go test ./...
 
 # Build the React UI
 ui-build:
@@ -32,14 +39,27 @@ ui-copy: ui-build
 # Build the Go binary with embedded UI
 build: ui-copy
 	@echo "Building $(BINARY_NAME) with embedded UI..."
-	@CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -o $(BINARY_NAME) $(CMD_PATH)
+	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) $(CMD_PATH)
 	@echo "$(BINARY_NAME) built successfully with embedded UI."
 
 # Build Go binary without UI (for development)
 build-no-ui:
 	@echo "Building $(BINARY_NAME) without UI..."
-	@CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -o $(BINARY_NAME) $(CMD_PATH)
+	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) $(CMD_PATH)
 	@echo "$(BINARY_NAME) built successfully."
+
+# Run linters
+lint:
+	@echo "Running golangci-lint..."
+	@golangci-lint run ./...
+	@echo "Running UI lint..."
+	@cd $(UI_DIR) && yarn lint
+
+# Print version info
+version:
+	@echo "Version: $(VERSION)"
+	@echo "Commit: $(COMMIT)"
+	@echo "Date: $(DATE)"
 
 run: build
 	@echo "Running $(BINARY_NAME)..."

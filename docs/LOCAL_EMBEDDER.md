@@ -1,5 +1,7 @@
 # Local Embedder Guide
 
+See also: [Semango Guide](./SEMANGO_GUIDE.md) for Quickstart, configuration, operations, and advanced usage.
+
 The Local Embedder allows you to use sentence transformer models locally without requiring external API calls. This is ideal for:
 
 - **Privacy**: Keep your data completely local

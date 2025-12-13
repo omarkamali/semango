@@ -3,7 +3,7 @@ package storage
 import (
 	"sync"
 
-	"github.com/omneity-labs/semango/internal/ingest"
+	"github.com/omarkamali/semango/internal/ingest"
 )
 
 // RepresentationStore defines an interface for storing and retrieving representations.

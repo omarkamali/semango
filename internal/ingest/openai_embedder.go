@@ -9,8 +9,8 @@ import (
 	"github.com/sashabaranov/go-openai"
 	"golang.org/x/time/rate"
 
-	"github.com/omneity-labs/semango/internal/util"
-	"github.com/omneity-labs/semango/pkg/semango"
+	"github.com/omarkamali/semango/internal/util"
+	"github.com/omarkamali/semango/pkg/semango"
 )
 
 // OpenAIEmbedder implements the Embedder interface using OpenAI's API.

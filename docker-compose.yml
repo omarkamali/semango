@@ -21,7 +21,7 @@ services:
     stdin_open: true # Keeps the container running
 
   # redis:
-  #   image: redis:7-alpine
+  #   image: redis:7-~alpine
   #   container_name: semango_redis
   #   ports:
   #     - "6379:6379"

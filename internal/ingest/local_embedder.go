@@ -13,8 +13,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/omneity-labs/semango/internal/util"
-	"github.com/omneity-labs/semango/pkg/semango"
+	"github.com/omarkamali/semango/internal/util"
+	"github.com/omarkamali/semango/pkg/semango"
 	"github.com/yalue/onnxruntime_go"
 )
 

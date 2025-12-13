@@ -9,16 +9,25 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"github.com/blevesearch/go-faiss"
-	"github.com/omneity-labs/semango/internal/api"
-	"github.com/omneity-labs/semango/internal/config"
-	"github.com/omneity-labs/semango/internal/ingest"
-	"github.com/omneity-labs/semango/internal/search"
-	"github.com/omneity-labs/semango/internal/storage"
-	"github.com/omneity-labs/semango/internal/util" // Import the logger package
+	"github.com/omarkamali/semango/internal/api"
+	"github.com/omarkamali/semango/internal/config"
+	"github.com/omarkamali/semango/internal/ingest"
+	"github.com/omarkamali/semango/internal/pipeline"
+	"github.com/omarkamali/semango/internal/search"
+	"github.com/omarkamali/semango/internal/storage"
+	"github.com/omarkamali/semango/internal/util"
 	"github.com/spf13/cobra"
+)
+
+// Version information set by ldflags during build
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
 )
 
 var AppConfig *config.Config // Global config instance
@@ -147,18 +156,6 @@ var indexCmd = &cobra.Command{
 		filePathChan := make(chan string, 100)
 		errChan := make(chan error, 1)
 
-		// Initialize the in-memory store
-		repStore := storage.NewInMemoryStore()
-
-		// Open or create Bleve full-text index
-		bleveIdx, err := storage.OpenOrCreateBleveIndex(AppConfig.Lexical.IndexPath)
-		if err != nil {
-			wrappedErr := util.WrapError(err, "Failed to open/create Bleve index", slog.String("path", AppConfig.Lexical.IndexPath))
-			util.LogError(util.Logger, wrappedErr)
-			return wrappedErr
-		}
-		defer bleveIdx.Close()
-
 		// Initialize embedder with proper validation
 		var embedder ingest.Embedder
 		{
@@ -204,74 +201,19 @@ var indexCmd = &cobra.Command{
 			}
 		}
 
-		// Open or create FAISS vector index
-		faissPath := filepath.Join("semango", "index", "faiss.index")
-		vecIdx, err := storage.NewFaissVectorIndex(context.Background(), faissPath, embedder.Dimension(), faiss.MetricInnerProduct)
-		if err != nil {
-			wrappedErr := util.WrapError(err, "Failed to open/create FAISS index", slog.String("path", faissPath))
-			util.LogError(util.Logger, wrappedErr)
-			return wrappedErr
-		}
-		defer vecIdx.Close()
+		mgr := pipeline.NewManager(AppConfig, embedder)
 
 		go ingest.Crawl(AppConfig.Files, filePathChan, errChan)
 
 		var filesProcessedCount int
-		// totalRepresentations will now be derived from the store
-
-		textLoader := ingest.NewTextLoader(AppConfig.Files.ChunkSize, AppConfig.Files.ChunkOverlap)
 
 		for relPath := range filePathChan {
 			absPath := filepath.Join(rootDir, relPath)
-			slog.Info("Processing file", "relative_path", relPath, "absolute_path", absPath)
-
-			ext := filepath.Ext(relPath)
-			var loader ingest.Loader
-			if stringInSlice(ext, textLoader.Extensions()) {
-				loader = textLoader
-			} else {
-				slog.Warn("No suitable loader found for file", "path", relPath, "extension", ext)
+			if err := mgr.ProcessFile(context.Background(), relPath, absPath); err != nil {
+				util.LogError(util.Logger, util.WrapError(err, "Failed to process file", slog.String("path", relPath)))
 				continue
-			}
-
-			ctx := context.Background()
-			representations, err := loader.Load(ctx, relPath, absPath)
-			if err != nil {
-				// Log and continue to next file
-				util.LogError(util.Logger, util.WrapError(err, "Failed to load file", slog.String("relative_path", relPath), slog.String("absolute_path", absPath)))
-				continue
-			}
-
-			for _, rep := range representations {
-				if err := repStore.Add(rep); err != nil {
-					// Log and continue
-					util.LogError(util.Logger, util.WrapError(err, "Failed to add representation to store", slog.String("id", rep.ID), slog.String("path", rep.Path)))
-					continue
-				}
-				slog.Info("Generated and stored representation", "id", rep.ID, "path", rep.Path, "modality", rep.Modality, "text_preview", truncateString(rep.Text, 50))
-
-				// Index in Bleve if modality is text
-				if rep.Modality == "text" {
-					if err := bleveIdx.IndexDocument(rep.ID, rep.Text, rep.Meta); err != nil {
-						// Log and continue
-						util.LogError(util.Logger, util.WrapError(err, "Failed to index document in Bleve", slog.String("id", rep.ID)))
-					}
-				}
-
-				// Vector embedding and upsert
-				vector, err := embedder.Embed(ctx, []string{rep.Text})
-				if err != nil {
-					util.LogError(util.Logger, util.WrapError(err, "Embedding failed", slog.String("id", rep.ID)))
-				} else if len(vector) == 1 {
-					if err := vecIdx.Upsert(ctx, rep.ID, vector[0]); err != nil {
-						util.LogError(util.Logger, util.WrapError(err, "Vector upsert failed", slog.String("id", rep.ID)))
-					}
-				}
 			}
 			filesProcessedCount++
-
-			// Metrics: increment files_processed counter
-			util.DefaultMetrics.IncCounter("files_processed", map[string]string{"ext": ext})
 		}
 
 		slog.Debug("filePathChan closed.", "files_crawled_count", filesProcessedCount)
@@ -291,11 +233,7 @@ var indexCmd = &cobra.Command{
 			return finalErr
 		}
 
-		slog.Info("Indexing process completed.", "files_processed_by_loader", filesProcessedCount, "total_representations_in_store", repStore.Count())
-		// Optionally, list all stored representations for debugging
-		// for _, rep := range repStore.GetAll() {
-		// 	slog.Debug("Stored item", "id", rep.ID, "path", rep.Path)
-		// }
+		slog.Info("Indexing process completed.", "files_processed", filesProcessedCount)
 		return nil
 	},
 }
@@ -451,12 +389,26 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print version information",
+	Long:  `Print detailed version information including build commit and date.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Printf("Semango %s\n", version)
+		fmt.Printf("  Commit:     %s\n", commit)
+		fmt.Printf("  Built:      %s\n", date)
+		fmt.Printf("  Go version: %s\n", runtime.Version())
+		fmt.Printf("  OS/Arch:    %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	},
+}
+
 func init() {
 	// Logger is initialized by importing internal/util
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(indexCmd)
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(versionCmd)
 	initCmd.Flags().StringP("file", "f", config.DefaultConfigPath, "Path to write the configuration file")
 	rootCmd.PersistentFlags().StringP("config", "c", config.DefaultConfigPath, "Path to the configuration file")
 }

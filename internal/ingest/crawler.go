@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/omneity-labs/semango/internal/config"
+	"github.com/omarkamali/semango/internal/config"
 )
 
 // Crawl scans the filesystem. It sends file paths to filePathChan and

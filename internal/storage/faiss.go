@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/blevesearch/go-faiss"
-	"github.com/omneity-labs/semango/internal/util"
+	"github.com/omarkamali/semango/internal/util"
 )
 
 // FaissIndex represents a FAISS vector index.
