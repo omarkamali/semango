@@ -21,6 +21,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Ensure FAISS source
+        run: |
+          if [ ! -d faiss ]; then
+            curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
+            tar -xzf faiss.tar.gz
+            mv faiss-1.8.0 faiss
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -97,6 +105,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Ensure FAISS source
+        run: |
+          if [ ! -d faiss ]; then
+            curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
+            tar -xzf faiss.tar.gz
+            mv faiss-1.8.0 faiss
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -181,6 +197,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Ensure FAISS source
+        run: |
+          if [ ! -d faiss ]; then
+            curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
+            tar -xzf faiss.tar.gz
+            mv faiss-1.8.0 faiss
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v5
