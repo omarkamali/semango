@@ -12,6 +12,8 @@ on:
 env:
   GO_VERSION: "1.23"
   NODE_VERSION: "20"
+  FAISS_REPO: https://github.com/blevesearch/faiss.git
+  FAISS_REF: b3d4e00a69425b95e0b283da7801efc9f66b580d
 
 jobs:
   lint:
@@ -21,13 +23,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Ensure FAISS source
+      - name: Checkout FAISS source
         run: |
-          if [ ! -d faiss ]; then
-            curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
-            tar -xzf faiss.tar.gz
-            mv faiss-1.8.0 faiss
-          fi
+          rm -rf faiss
+          git clone --branch bleve --single-branch "$FAISS_REPO" faiss
+          git -C faiss checkout "$FAISS_REF"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -134,7 +134,7 @@ jobs:
         with:
           path: |
             ~/.faiss-install
-          key: ${{ runner.os }}-faiss-1.8.0-v3
+          key: ${{ runner.os }}-faiss-bleve-${{ env.FAISS_REF }}-v1
 
       - name: Build FAISS C API
         if: steps.cache-faiss.outputs.cache-hit != 'true'
@@ -151,16 +151,6 @@ jobs:
           mkdir -p $HOME/.faiss-install/lib
           find faiss/build/c_api -maxdepth 1 -name "libfaiss_c*.so*" -exec cp -a {} $HOME/.faiss-install/lib/ \;
           cp -r faiss/c_api $HOME/.faiss-install/include/faiss
-
-      - name: Ensure custom FAISS headers
-        run: |
-          mkdir -p $HOME/.faiss-install/include/faiss/c_api
-          cp faiss/c_api/IndexIVF_c_ex.h $HOME/.faiss-install/include/faiss/c_api/
-
-      - name: Ensure custom FAISS headers
-        run: |
-          mkdir -p $HOME/.faiss-install/include/faiss/c_api
-          cp faiss/c_api/IndexIVF_c_ex.h $HOME/.faiss-install/include/faiss/c_api/
 
       - name: Install FAISS to system
         run: |
