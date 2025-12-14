@@ -106,13 +106,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Ensure FAISS source
+      - name: Checkout FAISS source
         run: |
-          if [ ! -d faiss ]; then
-            curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
-            tar -xzf faiss.tar.gz
-            mv faiss-1.8.0 faiss
-          fi
+          rm -rf faiss
+          git clone --branch bleve --single-branch "$FAISS_REPO" faiss
+          git -C faiss checkout "$FAISS_REF"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -226,7 +224,7 @@ jobs:
         with:
           path: |
             ~/.faiss-install
-          key: ${{ runner.os }}-faiss-1.8.0-v2
+          key: ${{ runner.os }}-faiss-bleve-${{ env.FAISS_REF }}-v1
 
       - name: Build FAISS C API
         if: steps.cache-faiss.outputs.cache-hit != 'true'
