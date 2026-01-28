@@ -12,10 +12,26 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-CGO_LDFLAGS_FAISS=-L/app/libs -lfaiss_c -Wl,-rpath,/app/libs
-CGO_LDFLAGS_ONNX=-L/app/libs -lonnxruntime -Wl,-rpath,/app/libs
+LIBS_DIR ?= $(CURDIR)/libs
+
+# Platform-specific CGO flags
+ifeq ($(OS),Windows_NT)
+	RPATH_FLAG =
+	BINARY_EXT = .exe
+else
+	UNAME_S := $(shell uname -s)
+	ifeq ($(UNAME_S),Darwin)
+		RPATH_FLAG = -Wl,-rpath,@loader_path/libs
+	else
+		RPATH_FLAG = -Wl,-rpath,$(LIBS_DIR)
+	endif
+	BINARY_EXT =
+endif
+
+CGO_LDFLAGS_FAISS=-L$(LIBS_DIR) -lfaiss_c $(RPATH_FLAG)
+CGO_LDFLAGS_ONNX=-L$(LIBS_DIR) -lonnxruntime $(RPATH_FLAG)
 CGO_LDFLAGS_ALL=$(CGO_LDFLAGS_FAISS) $(CGO_LDFLAGS_ONNX)
-CGO_CPPFLAGS_ALL=-I/app
+CGO_CPPFLAGS_ALL=-I$(CURDIR)
 
 all: build
 
@@ -38,15 +54,15 @@ ui-copy: ui-build
 
 # Build the Go binary with embedded UI
 build: ui-copy
-	@echo "Building $(BINARY_NAME) with embedded UI..."
-	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) $(CMD_PATH)
-	@echo "$(BINARY_NAME) built successfully with embedded UI."
+	@echo "Building $(BINARY_NAME)$(BINARY_EXT) with embedded UI..."
+	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)$(BINARY_EXT) $(CMD_PATH)
+	@echo "$(BINARY_NAME)$(BINARY_EXT) built successfully with embedded UI."
 
 # Build Go binary without UI (for development)
 build-no-ui:
-	@echo "Building $(BINARY_NAME) without UI..."
-	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) $(CMD_PATH)
-	@echo "$(BINARY_NAME) built successfully."
+	@echo "Building $(BINARY_NAME)$(BINARY_EXT) without UI..."
+	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)$(BINARY_EXT) $(CMD_PATH)
+	@echo "$(BINARY_NAME)$(BINARY_EXT) built successfully."
 
 # Run linters
 lint:

@@ -93,7 +93,9 @@ build_go() {
     log_info "Building Go binary with embedded UI..."
     
     # Set CGO flags for FAISS and ONNX
-    export CGO_LDFLAGS="-L/app/libs -lfaiss_c -lonnxruntime -Wl,-rpath,/app/libs"
+    LIBS_DIR="$(pwd)/libs"
+    export CGO_LDFLAGS="-L$LIBS_DIR -lfaiss_c -lonnxruntime -Wl,-rpath,$LIBS_DIR"
+    export CGO_CPPFLAGS="-I$(pwd)"
     
     go build -o "$BINARY_NAME" "$CMD_PATH"
     

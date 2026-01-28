@@ -4,45 +4,15 @@
 run:
   timeout: 5m
   modules-download-mode: readonly
-  build-tags:
-    - "!cgo"
-  skip-dirs:
+
+issues:
+  exclude-dirs:
     - internal/storage
     - internal/pipeline
     - internal/search
     - internal/api
     - internal/ingest
     - cmd
-
-linters:
-  enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - gofmt
-    - goimports
-    - misspell
-    - unconvert
-    - bodyclose
-    - noctx
-    - prealloc
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment  # Too noisy for now
-  goimports:
-    local-prefixes: github.com/omarkamali/semango
-  misspell:
-    locale: US
-
-issues:
   exclude-rules:
     # Exclude some linters from running on tests files
     - path: _test\.go

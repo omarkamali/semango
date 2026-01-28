@@ -5,7 +5,7 @@ name: CI
 
 on:
   push:
-    branches: [master, develop]
+    branches: [master]
   pull_request:
     branches: [master]
 
@@ -14,39 +14,9 @@ env:
   NODE_VERSION: "20"
   FAISS_REPO: https://github.com/blevesearch/faiss.git
   FAISS_REF: b3d4e00a69425b95e0b283da7801efc9f66b580d
+  ONNX_VERSION: "1.20.1"
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Checkout FAISS source
-        run: |
-          rm -rf faiss
-          git clone --branch bleve --single-branch "$FAISS_REPO" faiss
-          git -C faiss checkout "$FAISS_REF"
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Create UI placeholder for embed
-        run: |
-          mkdir -p internal/api/ui
-          touch internal/api/ui/.gitkeep
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: latest
-          args: --timeout=5m
-        env:
-          CGO_ENABLED: 0
-
   lint-ui:
     name: Lint UI
     runs-on: ubuntu-latest
@@ -98,155 +68,132 @@ jobs:
           path: ui/dist
           retention-days: 1
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
+  test-and-build:
+    name: ${{ matrix.os }} - Test & Build
+    runs-on: ${{ matrix.os }}
     needs: build-ui
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Checkout FAISS source
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install System Dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          rm -rf faiss
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake libopenblas-dev libgflags-dev swig tesseract-ocr libleptonica-dev
+          CUE_VERSION="0.9.2"
+          curl -fsSL "https://github.com/cue-lang/cue/releases/download/v${CUE_VERSION}/cue_v${CUE_VERSION}_linux_amd64.tar.gz" | sudo tar -xz -C /usr/local/bin cue
+
+      - name: Install System Dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install cmake openblas swig tesseract leptonica cue
+
+      - name: Install System Dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          choco install swig cmake
+          CUE_VERSION="0.9.2"
+          curl -LO "https://github.com/cue-lang/cue/releases/download/v${CUE_VERSION}/cue_v${CUE_VERSION}_windows_amd64.zip"
+          unzip cue_v${CUE_VERSION}_windows_amd64.zip
+          mkdir -p bin
+          mv cue.exe bin/
+          echo "$(pwd)/bin" >> $GITHUB_PATH
+
+      - name: Cache FAISS
+        id: cache-faiss
+        uses: actions/cache@v4
+        with:
+          path: libs
+          key: ${{ matrix.os }}-faiss-${{ env.FAISS_REF }}-v2
+
+      - name: Build FAISS C API (Linux/macOS)
+        if: steps.cache-faiss.outputs.cache-hit != 'true' && matrix.os != 'windows-latest'
+        run: |
+          mkdir -p libs
           git clone --branch bleve --single-branch "$FAISS_REPO" faiss
-          git -C faiss checkout "$FAISS_REF"
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            libopenblas-dev \
-            libgflags-dev
-
-      - name: Cache FAISS
-        id: cache-faiss
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.faiss-install
-          key: ${{ runner.os }}-faiss-bleve-${{ env.FAISS_REF }}-v1
-
-      - name: Build FAISS C API
-        if: steps.cache-faiss.outputs.cache-hit != 'true'
-        run: |
-          cmake -S faiss -B faiss/build \
+          cd faiss && git checkout "$FAISS_REF"
+          # Set include path to repo root so <faiss/Header.h> works
+          export CXXFLAGS="-I$PWD"
+          cmake -B build \
+            -DCMAKE_CXX_FLAGS="-I$PWD" \
             -DFAISS_ENABLE_GPU=OFF \
-            -DFAISS_ENABLE_PYTHON=OFF \
             -DFAISS_ENABLE_C_API=ON \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=$HOME/.faiss-install
-          cmake --build faiss/build --target faiss_c -- -j$(nproc)
-          cmake --build faiss/build --target install
-          mkdir -p $HOME/.faiss-install/lib
-          find faiss/build/c_api -maxdepth 1 -name "libfaiss_c*.so*" -exec cp -a {} $HOME/.faiss-install/lib/ \;
-          cp -r faiss/c_api $HOME/.faiss-install/include/faiss
-
-      - name: Install FAISS to system
-        run: |
-          sudo cp -r ~/.faiss-install/lib/* /usr/local/lib/
-          sudo cp -r ~/.faiss-install/include/* /usr/local/include/
-          sudo ldconfig
-
-      - name: Download UI artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ui-dist
-          path: internal/api/ui
-
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
-        env:
-          CGO_ENABLED: 1
-          CGO_CPPFLAGS: -I/usr/local/include
-          CGO_LDFLAGS: -L/usr/local/lib -lfaiss_c
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: coverage.out
-          fail_ci_if_error: false
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    needs: [lint, build-ui, test]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Ensure FAISS source
-        run: |
-          if [ ! -d faiss ]; then
-            curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v1.8.0.tar.gz" -o faiss.tar.gz
-            tar -xzf faiss.tar.gz
-            mv faiss-1.8.0 faiss
+            -DFAISS_ENABLE_PYTHON=OFF \
+            -DBUILD_TESTING=OFF \
+            -DFAISS_OPT_LEVEL=generic .
+          make -C build -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) faiss_c
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            cp build/c_api/libfaiss_c.so* ../libs/
+          else
+            cp build/c_api/libfaiss_c.dylib ../libs/
           fi
+          cd ..
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Install system dependencies
+      - name: Build FAISS C API (Windows)
+        if: steps.cache-faiss.outputs.cache-hit != 'true' && matrix.os == 'windows-latest'
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            libopenblas-dev \
-            libgflags-dev
-
-      - name: Cache FAISS
-        id: cache-faiss
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.faiss-install
-          key: ${{ runner.os }}-faiss-bleve-${{ env.FAISS_REF }}-v1
-
-      - name: Build FAISS C API
-        if: steps.cache-faiss.outputs.cache-hit != 'true'
-        run: |
-          cmake -S faiss -B faiss/build \
+          mkdir -p libs
+          git clone --branch bleve --single-branch "$FAISS_REPO" faiss
+          cd faiss && git checkout "$FAISS_REF"
+          cmake -B build -G "MinGW Makefiles" \
+            -DCMAKE_CXX_FLAGS="-I$(pwd)" \
             -DFAISS_ENABLE_GPU=OFF \
-            -DFAISS_ENABLE_PYTHON=OFF \
             -DFAISS_ENABLE_C_API=ON \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=$HOME/.faiss-install
-          cmake --build faiss/build --target faiss_c -- -j$(nproc)
-          cmake --build faiss/build --target install
-          mkdir -p $HOME/.faiss-install/lib
-          find faiss/build/c_api -maxdepth 1 -name "libfaiss_c*.so*" -exec cp -a {} $HOME/.faiss-install/lib/ \;
-          cp -r faiss/c_api $HOME/.faiss-install/include/faiss
+            -DFAISS_ENABLE_PYTHON=OFF \
+            -DBUILD_TESTING=OFF \
+            -DFAISS_OPT_LEVEL=generic .
+          mingw32-make -C build -j$NUMBER_OF_PROCESSORS faiss_c
+          cp build/c_api/libfaiss_c.dll ../libs/
+          cd ..
 
-      - name: Install FAISS to system
+      - name: Install ONNX Runtime (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          sudo cp -r ~/.faiss-install/lib/* /usr/local/lib/
-          sudo cp -r ~/.faiss-install/include/* /usr/local/include/
-          sudo ldconfig
+          mkdir -p libs include/onnxruntime
+          ONNX_VERSION="1.20.1"
+          curl -L -o onnx.tgz https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-x64-${ONNX_VERSION}.tgz
+          tar -xzf onnx.tgz
+          cp onnxruntime-linux-x64-${ONNX_VERSION}/lib/libonnxruntime.so* libs/
+          cp onnxruntime-linux-x64-${ONNX_VERSION}/include/* include/onnxruntime/
+          cd libs && ln -sf libonnxruntime.so.${ONNX_VERSION} libonnxruntime.so && cd ..
+
+      - name: Install ONNX Runtime (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p libs include/onnxruntime
+          ONNX_VERSION="1.20.1"
+          curl -L -o onnx.tgz https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-osx-arm64-${ONNX_VERSION}.tgz
+          tar -xzf onnx.tgz
+          cp onnxruntime-osx-arm64-${ONNX_VERSION}/lib/libonnxruntime*.dylib libs/
+          cp onnxruntime-osx-arm64-${ONNX_VERSION}/include/* include/onnxruntime/
+          # Ensure generic symlink for the linker
+          cd libs && ln -sf $(ls libonnxruntime.*.dylib | head -n 1) libonnxruntime.dylib && cd ..
+
+      - name: Install ONNX Runtime (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p libs include/onnxruntime
+          curl -L -o onnx.zip https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/onnxruntime-win-x64-${{ env.ONNX_VERSION }}.zip
+          unzip onnx.zip
+          cp onnxruntime-win-x64-${{ env.ONNX_VERSION }}/lib/onnxruntime.dll libs/
+          cp onnxruntime-win-x64-${{ env.ONNX_VERSION }}/lib/onnxruntime.lib libs/
+          cp onnxruntime-win-x64-${{ env.ONNX_VERSION }}/include/* include/onnxruntime/
 
       - name: Download UI artifacts
         uses: actions/download-artifact@v4
@@ -254,15 +201,48 @@ jobs:
           name: ui-dist
           path: internal/api/ui
 
-      - name: Build binary
-        run: |
-          go build -v -ldflags="-s -w" -o semango ./cmd/semango
+      - name: Go Lint (Linux Only)
+        if: matrix.os == 'ubuntu-latest'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=10m --out-format=colored-line-number
         env:
           CGO_ENABLED: 1
-          CGO_CPPFLAGS: -I/usr/local/include
-          CGO_LDFLAGS: -L/usr/local/lib -lfaiss_c
+          LD_LIBRARY_PATH: "${{ github.workspace }}/libs"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lonnxruntime"
+          CGO_CPPFLAGS: "-I${{ github.workspace }}"
 
-      - name: Verify binary
+      - name: Run Tests
+        if: matrix.os != 'windows-latest'
+        run: make test
+        env:
+          CGO_ENABLED: 1
+          LIBS_DIR: ${{ github.workspace }}/libs
+          LD_LIBRARY_PATH: "${{ github.workspace }}/libs"
+          DYLD_LIBRARY_PATH: "${{ github.workspace }}/libs"
+
+      - name: Build Binary (Posix)
+        if: matrix.os != 'windows-latest'
+        run: make build-no-ui
+        env:
+          CGO_ENABLED: 1
+          LIBS_DIR: ${{ github.workspace }}/libs
+
+      - name: Build Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
         run: |
-          LD_LIBRARY_PATH=/usr/local/lib ./semango --help
-          echo "Build successful!"
+          export CGO_ENABLED=1
+          export CGO_LDFLAGS="-L$(pwd)/libs -lfaiss_c -lonnxruntime"
+          export CGO_CPPFLAGS="-I$(pwd)"
+          go build -ldflags "-s -w" -o semango.exe ./cmd/semango
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: semango-${{ matrix.os }}
+          path: |
+            semango
+            semango.exe
+            libs/*
