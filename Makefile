@@ -23,7 +23,7 @@ else
 	ifeq ($(UNAME_S),Darwin)
 		RPATH_FLAG = -Wl,-rpath,@loader_path/libs
 	else
-		RPATH_FLAG = -Wl,-rpath,$(LIBS_DIR)
+		RPATH_FLAG = -Wl,-rpath,'$$ORIGIN/libs'
 	endif
 	BINARY_EXT =
 endif

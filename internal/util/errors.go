@@ -48,10 +48,6 @@ func newSemangoError(originalErr error, message string, attrs ...slog.Attr) *Sem
 	n := runtime.Stack(buf, false)
 	stack := string(buf[:n])
 
-	// Optional: Clean up the stack trace a bit, e.g., remove GOROOT functions
-	// stack = cleanStack(stack)
-
-
 	// If the original error is already a SemangoError, append attrs and message, but keep original stack.
 	if se, ok := originalErr.(*SemangoError); ok {
 		// Prepend message, inherit stack and original error from `se`
@@ -118,17 +114,4 @@ func LogError(logger *slog.Logger, err error) {
 		logger.Error("An error occurred", slog.String("error", err.Error()))
 	}
 }
-
-// Helper function to potentially clean stack traces (example)
-// Not strictly necessary but can make logs cleaner.
-func cleanStack(stack string) string {
-	lines := strings.Split(stack, "\n")
-	var cleanedLines []string
-	goroot := runtime.GOROOT()
-	for _, line := range lines {
-		if !strings.Contains(line, goroot) { // Remove lines originating from GOROOT
-			cleanedLines = append(cleanedLines, line)
-		}
-	}
-	return strings.Join(cleanedLines, "\n")
-} 
+ 

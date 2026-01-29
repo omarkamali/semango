@@ -235,6 +235,20 @@ jobs:
           export CGO_CPPFLAGS="-I$(pwd)"
           go build -ldflags "-s -w" -o semango.exe ./cmd/semango
 
+      - name: Verify Binary (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          export LD_LIBRARY_PATH="${{ github.workspace }}/libs"
+          export DYLD_LIBRARY_PATH="${{ github.workspace }}/libs"
+          ./semango --help
+
+      - name: Verify Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          export PATH="$(pwd)/libs:$PATH"
+          ./semango.exe --help
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
