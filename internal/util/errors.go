@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
-	"strings"
 )
 
 // SemangoError is a custom error type for adding context and stack traces.
