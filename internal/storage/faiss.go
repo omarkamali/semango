@@ -1,5 +1,6 @@
-//go:build cgo && linux && amd64
-// +build cgo,linux,amd64
+//go:build cgo && (linux || darwin)
+// +build cgo
+// +build linux darwin
 
 package storage
 

@@ -1,5 +1,5 @@
-//go:build !cgo || !linux || !amd64
-// +build !cgo !linux !amd64
+//go:build !cgo || (!linux && !darwin)
+// +build !cgo !linux,!darwin
 
 package storage
 
@@ -8,7 +8,7 @@ import (
     "errors"
 )
 
-var errFaissUnavailable = errors.New("faiss support requires CGO on linux/amd64")
+var errFaissUnavailable = errors.New("faiss support requires CGO on linux or darwin")
 
 // FaissIndex is a stub used when CGO or the required platform is unavailable.
 type FaissIndex struct{}
