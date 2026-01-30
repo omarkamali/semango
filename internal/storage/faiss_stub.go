@@ -1,5 +1,5 @@
 //go:build !cgo || !linux || !amd64
-// +build !cgo linux,!amd64 !linux
+// +build !cgo !linux !amd64
 
 package storage
 
