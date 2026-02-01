@@ -17,6 +17,8 @@ FAISS_STATIC_DIR ?= $(CURDIR)/libs-static
 ONNX_EMBED_DIR=internal/onnxruntime/embedded
 ONNX_VERSION ?= 1.22.0
 
+comma := ,
+
 # Platform-specific CGO flags
 FAISS_STATIC_C := $(wildcard $(FAISS_STATIC_DIR)/libfaiss_c.a)
 FAISS_STATIC := $(wildcard $(FAISS_STATIC_DIR)/libfaiss.a)
@@ -32,12 +34,16 @@ else
 		# Prefer standard Homebrew prefixes and only include paths that exist.
 		LIBOMP_LIBDIR := $(firstword $(wildcard /opt/homebrew/opt/libomp/lib /usr/local/opt/libomp/lib))
 		OPENBLAS_LIBDIR := $(firstword $(wildcard /opt/homebrew/opt/openblas/lib /usr/local/opt/openblas/lib))
+		LIBOMP_LDFLAGS := $(if $(LIBOMP_LIBDIR),-L$(LIBOMP_LIBDIR),)
+		OPENBLAS_LDFLAGS := $(if $(OPENBLAS_LIBDIR),-L$(OPENBLAS_LIBDIR),)
+		LIBOMP_RPATH := $(if $(LIBOMP_LIBDIR),-Wl$(comma)-rpath$(comma)$(LIBOMP_LIBDIR),)
+		OPENBLAS_RPATH := $(if $(OPENBLAS_LIBDIR),-Wl$(comma)-rpath$(comma)$(OPENBLAS_LIBDIR),)
 		RPATH_FLAG = -Wl,-rpath,@loader_path/libs
 		FAISS_STATIC_EXTRA = -lc++ \
-			$(if $(LIBOMP_LIBDIR),-L$(LIBOMP_LIBDIR),) -lomp \
-			$(if $(OPENBLAS_LIBDIR),-L$(OPENBLAS_LIBDIR),) -lopenblas \
-			$(if $(LIBOMP_LIBDIR),-Wl,-rpath,$(LIBOMP_LIBDIR),) \
-			$(if $(OPENBLAS_LIBDIR),-Wl,-rpath,$(OPENBLAS_LIBDIR),)
+			$(LIBOMP_LDFLAGS) -lomp \
+			$(OPENBLAS_LDFLAGS) -lopenblas \
+			$(LIBOMP_RPATH) \
+			$(OPENBLAS_RPATH)
 	else
 		RPATH_FLAG = -Wl,-rpath,'$$ORIGIN/libs'
 		FAISS_STATIC_EXTRA = -lstdc++ -lgomp -lopenblas -lpthread -lm
@@ -46,7 +52,8 @@ else
 	ifneq ($(FAISS_STATIC_C),)
 	ifneq ($(FAISS_STATIC),)
 		ifeq ($(UNAME_S),Darwin)
-			CGO_LDFLAGS_FAISS = $(FAISS_STATIC_DIR)/libfaiss_c.a $(FAISS_STATIC_DIR)/libfaiss.a $(FAISS_STATIC_EXTRA)
+			# Some CGO deps also add "-lfaiss_c"; ensure it resolves to the archive in libs-static.
+			CGO_LDFLAGS_FAISS = -L$(FAISS_STATIC_DIR) -lfaiss_c -lfaiss $(FAISS_STATIC_EXTRA)
 		else
 			CGO_LDFLAGS_FAISS = -L$(FAISS_STATIC_DIR) -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic $(FAISS_STATIC_EXTRA)
 		endif

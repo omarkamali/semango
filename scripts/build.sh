@@ -147,7 +147,7 @@ build_go() {
             [ -n "$OPENBLAS_LIBDIR" ] || { [ -d /opt/homebrew/opt/openblas/lib ] && OPENBLAS_LIBDIR=/opt/homebrew/opt/openblas/lib; }
             [ -n "$OPENBLAS_LIBDIR" ] || { [ -d /usr/local/opt/openblas/lib ] && OPENBLAS_LIBDIR=/usr/local/opt/openblas/lib; }
 
-            export CGO_LDFLAGS="$FAISS_STATIC_DIR/libfaiss_c.a $FAISS_STATIC_DIR/libfaiss.a -lc++ ${LIBOMP_LIBDIR:+-L$LIBOMP_LIBDIR} -lomp ${OPENBLAS_LIBDIR:+-L$OPENBLAS_LIBDIR} -lopenblas ${LIBOMP_LIBDIR:+-Wl,-rpath,$LIBOMP_LIBDIR} ${OPENBLAS_LIBDIR:+-Wl,-rpath,$OPENBLAS_LIBDIR}"
+            export CGO_LDFLAGS="-L$FAISS_STATIC_DIR -lfaiss_c -lfaiss -lc++ ${LIBOMP_LIBDIR:+-L$LIBOMP_LIBDIR} -lomp ${OPENBLAS_LIBDIR:+-L$OPENBLAS_LIBDIR} -lopenblas ${LIBOMP_LIBDIR:+-Wl,-rpath,$LIBOMP_LIBDIR} ${OPENBLAS_LIBDIR:+-Wl,-rpath,$OPENBLAS_LIBDIR}"
         else
             export CGO_LDFLAGS="-L$FAISS_STATIC_DIR -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic -lstdc++ -lgomp -lopenblas -lpthread -lm"
         fi
