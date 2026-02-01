@@ -148,6 +148,7 @@ jobs:
             cd ..
           fi
           # Copy headers for CGO
+          mkdir -p ../include/faiss
           cp -r c_api ../include/faiss/
           cd ..
 

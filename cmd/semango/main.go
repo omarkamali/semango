@@ -19,6 +19,7 @@ import (
 	"github.com/omarkamali/semango/internal/search"
 	"github.com/omarkamali/semango/internal/storage"
 	"github.com/omarkamali/semango/internal/util"
+	"github.com/omarkamali/semango/pkg/types"
 	"github.com/spf13/cobra"
 )
 
@@ -314,7 +315,7 @@ var searchCmd = &cobra.Command{
 		if err != nil {
 			return util.WrapError(err, "Embedding query failed")
 		}
-		vecIdx, err := storage.NewFaissVectorIndex(context.Background(), faissPath, embedder.Dimension(), faiss.MetricInnerProduct)
+		vecIdx, err := storage.NewFaissVectorIndex(context.Background(), faissPath, embedder.Dimension(), types.MetricInnerProduct)
 		if err != nil {
 			return util.WrapError(err, "Opening vector index failed")
 		}
