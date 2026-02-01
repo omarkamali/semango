@@ -14,7 +14,7 @@ env:
   NODE_VERSION: "20"
   FAISS_REPO: https://github.com/blevesearch/faiss.git
   FAISS_REF: b3d4e00a69425b95e0b283da7801efc9f66b580d
-  ONNX_VERSION: "1.20.1"
+  ONNX_VERSION: "1.22.0"
 
 jobs:
   lint-ui:
@@ -103,7 +103,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          choco install swig cmake openblas
+          choco install swig cmake -y
           CUE_VERSION="0.9.2"
           curl -LO "https://github.com/cue-lang/cue/releases/download/v${CUE_VERSION}/cue_v${CUE_VERSION}_windows_amd64.zip"
           unzip -o cue_v${CUE_VERSION}_windows_amd64.zip
@@ -113,6 +113,7 @@ jobs:
 
       - name: Cache FAISS
         id: cache-faiss
+        if: matrix.os != 'windows-latest'
         uses: actions/cache@v4
         with:
           path: |
@@ -136,15 +137,17 @@ jobs:
           make -C build -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) faiss_c
           if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
             cp build/c_api/libfaiss_c.so* ../libs/
+            cp build/faiss/libfaiss.so* ../libs/
           else
-            cp build/c_api/libfaiss_c.dylib ../libs/
+            cp build/c_api/libfaiss_c.dylib* ../libs/
+            cp build/faiss/libfaiss.dylib* ../libs/
           fi
           # Copy headers for CGO
           cp -r c_api ../include/faiss/
           cd ..
 
       - name: Build FAISS C API (Windows)
-        if: steps.cache-faiss.outputs.cache-hit != 'true' && matrix.os == 'windows-latest'
+        if: steps.cache-faiss.outputs.cache-hit != 'true' && matrix.os == 'windows-latest' && false # Skip FAISS on Windows
         shell: bash
         run: |
           mkdir -p libs include/faiss
@@ -168,22 +171,20 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           mkdir -p libs include/onnxruntime
-          ONNX_VERSION="1.20.1"
-          curl -L -o onnx.tgz https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-x64-${ONNX_VERSION}.tgz
+          curl -L -o onnx.tgz https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/onnxruntime-linux-x64-${{ env.ONNX_VERSION }}.tgz
           tar -xzf onnx.tgz
-          cp onnxruntime-linux-x64-${ONNX_VERSION}/lib/libonnxruntime.so* libs/
-          cp -r onnxruntime-linux-x64-${ONNX_VERSION}/include/* include/onnxruntime/
-          cd libs && ln -sf libonnxruntime.so.${ONNX_VERSION} libonnxruntime.so && cd ..
+          cp onnxruntime-linux-x64-${{ env.ONNX_VERSION }}/lib/libonnxruntime.so* libs/
+          cp -r onnxruntime-linux-x64-${{ env.ONNX_VERSION }}/include/* include/onnxruntime/
+          cd libs && ln -sf libonnxruntime.so.${{ env.ONNX_VERSION }} libonnxruntime.so && cd ..
 
       - name: Install ONNX Runtime (macOS)
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p libs include/onnxruntime
-          ONNX_VERSION="1.20.1"
-          curl -L -o onnx.tgz https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-osx-arm64-${ONNX_VERSION}.tgz
+          curl -L -o onnx.tgz https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/onnxruntime-osx-arm64-${{ env.ONNX_VERSION }}.tgz
           tar -xzf onnx.tgz
-          cp onnxruntime-osx-arm64-${ONNX_VERSION}/lib/libonnxruntime*.dylib libs/
-          cp -r onnxruntime-osx-arm64-${ONNX_VERSION}/include/* include/onnxruntime/
+          cp onnxruntime-osx-arm64-${{ env.ONNX_VERSION }}/lib/libonnxruntime*.dylib libs/
+          cp -r onnxruntime-osx-arm64-${{ env.ONNX_VERSION }}/include/* include/onnxruntime/
           # Ensure generic symlink for the linker
           cd libs && ln -sf $(ls libonnxruntime.*.dylib | head -n 1) libonnxruntime.dylib && cd ..
 
@@ -213,7 +214,7 @@ jobs:
         env:
           CGO_ENABLED: 1
           LD_LIBRARY_PATH: "${{ github.workspace }}/libs"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lonnxruntime"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lfaiss -lonnxruntime"
           CGO_CPPFLAGS: "-I${{ github.workspace }}/include -I${{ github.workspace }}"
 
       - name: Run Tests
@@ -225,7 +226,7 @@ jobs:
           LD_LIBRARY_PATH: "${{ github.workspace }}/libs"
           DYLD_LIBRARY_PATH: "${{ github.workspace }}/libs"
           CGO_CPPFLAGS: "-I${{ github.workspace }}/include -I${{ github.workspace }}"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lonnxruntime"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lfaiss -lonnxruntime"
 
       - name: Build Binary (Posix)
         if: matrix.os != 'windows-latest'
@@ -234,14 +235,14 @@ jobs:
           CGO_ENABLED: 1
           LIBS_DIR: ${{ github.workspace }}/libs
           CGO_CPPFLAGS: "-I${{ github.workspace }}/include -I${{ github.workspace }}"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lonnxruntime"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lfaiss -lonnxruntime"
 
       - name: Build Binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           export CGO_ENABLED=1
-          export CGO_LDFLAGS="-L$(pwd)/libs -lfaiss_c -lonnxruntime"
+          export CGO_LDFLAGS="-L$(pwd)/libs -lonnxruntime"
           export CGO_CPPFLAGS="-I$(pwd)/include -I$(pwd)"
           go build -ldflags "-s -w" -o semango.exe ./cmd/semango
 

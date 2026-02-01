@@ -44,6 +44,16 @@ RUN curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v${FAIS
     cp -r c_api /usr/local/include/faiss && \
     cd / && rm -rf faiss.tar.gz faiss-${FAISS_VERSION}
 
+# Install ONNX Runtime
+ENV ONNX_VERSION=1.22.0
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then ONNX_ARCH="x64"; elif [ "$ARCH" = "arm64" ]; then ONNX_ARCH="aarch64"; else echo "Unsupported architecture: $ARCH" && exit 1; fi && \
+    curl -L "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-${ONNX_ARCH}-${ONNX_VERSION}.tgz" -o onnx.tgz && \
+    tar -xzf onnx.tgz && \
+    cp onnxruntime-linux-${ONNX_ARCH}-${ONNX_VERSION}/lib/libonnxruntime.so* /usr/local/lib/ && \
+    cp -r onnxruntime-linux-${ONNX_ARCH}-${ONNX_VERSION}/include/* /usr/local/include/ && \
+    rm -rf onnx.tgz onnxruntime-linux-${ONNX_ARCH}-${ONNX_VERSION}
+
 WORKDIR /build
 
 # Copy go.mod first for better caching
@@ -84,10 +94,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas0 \
     libgomp1 \
     tesseract-ocr \
+    libtesseract-dev \
+    libleptonica-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy FAISS libraries from builder
+# Copy FAISS and ONNX libraries from builder
 COPY --from=go-builder /usr/local/lib/libfaiss* /usr/local/lib/
+COPY --from=go-builder /usr/local/lib/libonnxruntime* /usr/local/lib/
 RUN ldconfig
 
 # Create non-root user

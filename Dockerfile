@@ -64,3 +64,13 @@ RUN curl -L "https://github.com/facebookresearch/faiss/archive/refs/tags/v${FAIS
     cp -r c_api /usr/local/include/faiss && \
     # Cleanup build artifacts
     cd / && rm -rf /opt/faiss_src 
+# Download and install ONNX Runtime
+ENV ONNX_VERSION=1.22.0
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then ONNX_ARCH="x64"; elif [ "$ARCH" = "arm64" ]; then ONNX_ARCH="aarch64"; else echo "Unsupported architecture: $ARCH" && exit 1; fi && \
+    curl -L "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-${ONNX_ARCH}-${ONNX_VERSION}.tgz" -o onnx.tgz && \
+    tar -xzf onnx.tgz && \
+    cp onnxruntime-linux-${ONNX_ARCH}-${ONNX_VERSION}/lib/libonnxruntime.so* /usr/local/lib/ && \
+    cp -r onnxruntime-linux-${ONNX_ARCH}-${ONNX_VERSION}/include/* /usr/local/include/ && \
+    rm -rf onnx.tgz onnxruntime-linux-${ONNX_ARCH}-${ONNX_VERSION} && \
+    ldconfig
