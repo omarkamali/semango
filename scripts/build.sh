@@ -12,6 +12,8 @@ NC='\033[0m' # No Color
 UI_DIR="ui"
 UI_DIST_DIR="$UI_DIR/dist"
 EMBED_UI_DIR="internal/api/ui"
+ONNX_EMBED_DIR="internal/onnxruntime/embedded"
+ONNX_VERSION="1.22.0"
 BINARY_NAME="semango"
 CMD_PATH="./cmd/semango"
 
@@ -88,14 +90,58 @@ copy_ui() {
     log_info "UI copied to $EMBED_UI_DIR"
 }
 
+# Prepare embedded ONNX Runtime library
+prepare_onnx_embed() {
+    log_info "Preparing embedded ONNX Runtime library..."
+
+    mkdir -p "$ONNX_EMBED_DIR"
+
+    case "$(uname -s)" in
+        Darwin)
+            if [ -f "$(pwd)/libs/libonnxruntime.${ONNX_VERSION}.dylib" ]; then
+                cp -f "$(pwd)/libs/libonnxruntime.${ONNX_VERSION}.dylib" "$ONNX_EMBED_DIR/libonnxruntime.${ONNX_VERSION}.dylib"
+            else
+                log_error "ONNX Runtime dylib not found in ./libs"
+                exit 1
+            fi
+            ;;
+        Linux)
+            if [ -f "$(pwd)/libs/libonnxruntime.so.${ONNX_VERSION}" ]; then
+                cp -f "$(pwd)/libs/libonnxruntime.so.${ONNX_VERSION}" "$ONNX_EMBED_DIR/libonnxruntime.so.${ONNX_VERSION}"
+            elif [ -f "$(pwd)/libs/libonnxruntime.so" ]; then
+                cp -f "$(pwd)/libs/libonnxruntime.so" "$ONNX_EMBED_DIR/libonnxruntime.so.${ONNX_VERSION}"
+            else
+                log_error "ONNX Runtime .so not found in ./libs"
+                exit 1
+            fi
+            ;;
+        *)
+            log_warn "ONNX Runtime embedding not configured for this platform"
+            ;;
+    esac
+
+    log_info "ONNX Runtime library embedded."
+}
+
 # Build Go binary
 build_go() {
     log_info "Building Go binary with embedded UI..."
-    
-    # Set CGO flags for FAISS and ONNX
+
+    prepare_onnx_embed
+
+    # Set CGO flags for FAISS (prefer static libs when available)
     LIBS_DIR="$(pwd)/libs"
-    export CGO_LDFLAGS="-L$LIBS_DIR -lfaiss_c -lonnxruntime -Wl,-rpath,$LIBS_DIR"
-    export CGO_CPPFLAGS="-I$(pwd)"
+    FAISS_STATIC_DIR="${FAISS_STATIC_DIR:-$(pwd)/libs-static}"
+    if [ -f "$FAISS_STATIC_DIR/libfaiss_c.a" ] && [ -f "$FAISS_STATIC_DIR/libfaiss.a" ]; then
+        if [ "$(uname -s)" = "Darwin" ]; then
+            export CGO_LDFLAGS="-L$FAISS_STATIC_DIR -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic -lc++ -lomp -lopenblas"
+        else
+            export CGO_LDFLAGS="-L$FAISS_STATIC_DIR -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic -lstdc++ -lgomp -lopenblas -lpthread -lm"
+        fi
+    else
+        export CGO_LDFLAGS="-L$LIBS_DIR -lfaiss_c -lfaiss"
+    fi
+    export CGO_CPPFLAGS="-I$(pwd) -I$(pwd)/include"
     
     go build -o "$BINARY_NAME" "$CMD_PATH"
     

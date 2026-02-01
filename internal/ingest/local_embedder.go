@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	ortlib "github.com/omarkamali/semango/internal/onnxruntime"
 	"github.com/omarkamali/semango/internal/util"
 	"github.com/omarkamali/semango/pkg/semango"
 	"github.com/yalue/onnxruntime_go"
@@ -496,7 +497,13 @@ func (le *LocalEmbedder) initONNXSession(modelDir string) (*onnxruntime_go.Advan
 
 	// Initialize ONNX Runtime environment if not already done
 	if !onnxruntime_go.IsInitialized() {
-		err := onnxruntime_go.InitializeEnvironment()
+		libPath, err := ortlib.EnsureSharedLibrary()
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare onnxruntime library: %w", err)
+		}
+		onnxruntime_go.SetSharedLibraryPath(libPath)
+
+		err = onnxruntime_go.InitializeEnvironment()
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize ONNX runtime: %w", err)
 		}

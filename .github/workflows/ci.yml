@@ -117,60 +117,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            libs
+            libs-static
             include/faiss
-          key: ${{ matrix.os }}-faiss-${{ env.FAISS_REF }}-v5
+          key: ${{ matrix.os }}-faiss-${{ env.FAISS_REF }}-v6
 
-      - name: Build FAISS C API (Linux/macOS)
+      - name: Build FAISS Static (Linux/macOS)
         if: steps.cache-faiss.outputs.cache-hit != 'true' && matrix.os != 'windows-latest'
-        run: |
-          mkdir -p libs include/faiss
-          git clone --branch bleve --single-branch "$FAISS_REPO" faiss
-          cd faiss && git checkout "$FAISS_REF"
-          # Set include path to repo root so <faiss/Header.h> works
-          export CXXFLAGS="-I$PWD"
-          CMAKE_OPTS="-DFAISS_ENABLE_GPU=OFF -DFAISS_ENABLE_C_API=ON -DBUILD_SHARED_LIBS=ON -DFAISS_ENABLE_PYTHON=OFF -DBUILD_TESTING=OFF -DFAISS_OPT_LEVEL=generic"
-          if [ "${{ matrix.os }}" == "macos-latest" ]; then
-            CMAKE_OPTS="$CMAKE_OPTS -DOpenMP_ROOT=$(brew --prefix libomp)"
-          fi
-          cmake -B build $CMAKE_OPTS -DCMAKE_CXX_FLAGS="-I$PWD" .
-          make -C build -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) faiss faiss_c
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            find build -name "libfaiss_c.so*" -exec cp -d {} ../libs/ \;
-            find build -name "libfaiss.so*" -exec cp -d {} ../libs/ \;
-          else
-            find build -name "libfaiss_c*.dylib" -exec cp {} ../libs/ \;
-            find build -name "libfaiss*.dylib" -exec cp {} ../libs/ \;
-            # On macOS, ensure generic names exist for the linker
-            (cd ../libs && \
-              [ -f libfaiss_c.dylib ] || ln -s libfaiss_c.*.dylib libfaiss_c.dylib 2>/dev/null || true && \
-              [ -f libfaiss.dylib ] || ln -s libfaiss.*.dylib libfaiss.dylib 2>/dev/null || true)
-          fi
-          # Copy headers for CGO
-          mkdir -p ../include/faiss
-          cp -r c_api ../include/faiss/
-          cd ..
-
-      - name: Build FAISS C API (Windows)
-        if: steps.cache-faiss.outputs.cache-hit != 'true' && matrix.os == 'windows-latest' && false # Skip FAISS on Windows
-        shell: bash
-        run: |
-          mkdir -p libs include/faiss
-          git clone --branch bleve --single-branch "$FAISS_REPO" faiss
-          cd faiss && git checkout "$FAISS_REF"
-          cmake -B build -G "MinGW Makefiles" \
-            -DCMAKE_CXX_FLAGS="-I$(pwd)" \
-            -DFAISS_ENABLE_GPU=OFF \
-            -DFAISS_ENABLE_C_API=ON \
-            -DBUILD_SHARED_LIBS=ON \
-            -DFAISS_ENABLE_PYTHON=OFF \
-            -DBUILD_TESTING=OFF \
-            -DFAISS_OPT_LEVEL=generic \
-            -DBLA_VENDOR=OpenBLAS .
-          mingw32-make -C build -j$NUMBER_OF_PROCESSORS faiss_c
-          cp build/c_api/libfaiss_c.dll ../libs/
-          cp -r c_api ../include/faiss/
-          cd ..
+        run: scripts/build_faiss_static.sh
 
       - name: Install ONNX Runtime (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -186,10 +139,17 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p libs include/onnxruntime
-          curl -L -o onnx.tgz https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/onnxruntime-osx-arm64-${{ env.ONNX_VERSION }}.tgz
+          ARCH="$(uname -m)"
+          if [ "$ARCH" = "arm64" ]; then
+            ONNX_PKG="onnxruntime-osx-arm64-${{ env.ONNX_VERSION }}.tgz"
+          else
+            ONNX_PKG="onnxruntime-osx-x64-${{ env.ONNX_VERSION }}.tgz"
+          fi
+          curl -L -o onnx.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/$ONNX_PKG"
           tar -xzf onnx.tgz
-          cp onnxruntime-osx-arm64-${{ env.ONNX_VERSION }}/lib/libonnxruntime*.dylib libs/
-          cp -r onnxruntime-osx-arm64-${{ env.ONNX_VERSION }}/include/* include/onnxruntime/
+          ORT_DIR="${ONNX_PKG%.tgz}"
+          cp "$ORT_DIR"/lib/libonnxruntime*.dylib libs/
+          cp -r "$ORT_DIR"/include/* include/onnxruntime/
           # Ensure generic symlink for the linker
           cd libs && ln -sf $(ls libonnxruntime.*.dylib | head -n 1) libonnxruntime.dylib && cd ..
 
@@ -203,6 +163,17 @@ jobs:
           cp onnxruntime-win-x64-${{ env.ONNX_VERSION }}/lib/onnxruntime.dll libs/
           cp onnxruntime-win-x64-${{ env.ONNX_VERSION }}/lib/onnxruntime.lib libs/
           cp -r onnxruntime-win-x64-${{ env.ONNX_VERSION }}/include/* include/onnxruntime/
+
+      - name: Prepare Embedded ONNX Runtime (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: make onnx-embed
+
+      - name: Prepare Embedded ONNX Runtime (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p internal/onnxruntime/embedded
+          cp -f libs/onnxruntime.dll internal/onnxruntime/embedded/onnxruntime.dll
 
       - name: Download UI artifacts
         uses: actions/download-artifact@v4
@@ -218,29 +189,16 @@ jobs:
           args: --timeout=10m --out-format=colored-line-number
         env:
           CGO_ENABLED: 1
-          LD_LIBRARY_PATH: "${{ github.workspace }}/libs"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lfaiss -lonnxruntime"
           CGO_CPPFLAGS: "-I${{ github.workspace }}/include -I${{ github.workspace }}"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/libs-static -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic -lstdc++ -lgomp -lopenblas -lpthread -lm"
 
       - name: Run Tests
         if: matrix.os != 'windows-latest'
         run: make test
-        env:
-          CGO_ENABLED: 1
-          LIBS_DIR: ${{ github.workspace }}/libs
-          LD_LIBRARY_PATH: "${{ github.workspace }}/libs"
-          DYLD_LIBRARY_PATH: "${{ github.workspace }}/libs"
-          CGO_CPPFLAGS: "-I${{ github.workspace }}/include -I${{ github.workspace }}"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lfaiss -lonnxruntime"
 
       - name: Build Binary (Posix)
         if: matrix.os != 'windows-latest'
         run: make build-no-ui
-        env:
-          CGO_ENABLED: 1
-          LIBS_DIR: ${{ github.workspace }}/libs
-          CGO_CPPFLAGS: "-I${{ github.workspace }}/include -I${{ github.workspace }}"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/libs -lfaiss_c -lfaiss -lonnxruntime"
 
       - name: Build Binary (Windows)
         if: matrix.os == 'windows-latest'
@@ -254,15 +212,12 @@ jobs:
       - name: Verify Binary (Linux/macOS)
         if: matrix.os != 'windows-latest'
         run: |
-          export LD_LIBRARY_PATH="${{ github.workspace }}/libs"
-          export DYLD_LIBRARY_PATH="${{ github.workspace }}/libs"
           ./semango --help
 
       - name: Verify Binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          export PATH="$(pwd)/libs:$PATH"
           ./semango.exe --help
 
       - name: Upload Artifacts
@@ -272,4 +227,3 @@ jobs:
           path: |
             semango
             semango.exe
-            libs/*

@@ -13,8 +13,14 @@ DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 LIBS_DIR ?= $(CURDIR)/libs
+FAISS_STATIC_DIR ?= $(CURDIR)/libs-static
+ONNX_EMBED_DIR=internal/onnxruntime/embedded
+ONNX_VERSION ?= 1.22.0
 
 # Platform-specific CGO flags
+FAISS_STATIC_C := $(wildcard $(FAISS_STATIC_DIR)/libfaiss_c.a)
+FAISS_STATIC := $(wildcard $(FAISS_STATIC_DIR)/libfaiss.a)
+
 ifeq ($(OS),Windows_NT)
 	RPATH_FLAG =
 	BINARY_EXT = .exe
@@ -23,20 +29,59 @@ else
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Darwin)
 		RPATH_FLAG = -Wl,-rpath,@loader_path/libs
+		FAISS_STATIC_EXTRA = -lc++ -lomp -lopenblas
 	else
 		RPATH_FLAG = -Wl,-rpath,'$$ORIGIN/libs'
+		FAISS_STATIC_EXTRA = -lstdc++ -lgomp -lopenblas -lpthread -lm
 	endif
 	BINARY_EXT =
-	CGO_LDFLAGS_FAISS = -L$(LIBS_DIR) -lfaiss_c -lfaiss $(RPATH_FLAG)
+	ifneq ($(FAISS_STATIC_C),)
+	ifneq ($(FAISS_STATIC),)
+		CGO_LDFLAGS_FAISS = -L$(FAISS_STATIC_DIR) -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic $(FAISS_STATIC_EXTRA)
+	else
+		CGO_LDFLAGS_FAISS = -L$(LIBS_DIR) -lfaiss_c -lfaiss $(RPATH_FLAG)
+	endif
+	else
+		CGO_LDFLAGS_FAISS = -L$(LIBS_DIR) -lfaiss_c -lfaiss $(RPATH_FLAG)
+	endif
 endif
 
-CGO_LDFLAGS_ONNX=-L$(LIBS_DIR) -lonnxruntime $(RPATH_FLAG)
-CGO_LDFLAGS_ALL=$(CGO_LDFLAGS_FAISS) $(CGO_LDFLAGS_ONNX)
+CGO_LDFLAGS_ALL=$(CGO_LDFLAGS_FAISS)
 CGO_CPPFLAGS_ALL=-I$(CURDIR) -I$(CURDIR)/include
 
 all: build
 
-test:
+
+onnx-embed:
+	@echo "Preparing embedded ONNX Runtime library..."
+	@mkdir -p $(ONNX_EMBED_DIR)
+	@if [ "$(OS)" = "Windows_NT" ]; then \
+		if [ -f "$(LIBS_DIR)/onnxruntime.dll" ]; then \
+			cp -f "$(LIBS_DIR)/onnxruntime.dll" "$(ONNX_EMBED_DIR)/onnxruntime.dll"; \
+		else \
+			echo "ONNX Runtime DLL not found in $(LIBS_DIR)"; \
+			exit 1; \
+		fi; \
+	elif [ "$(UNAME_S)" = "Darwin" ]; then \
+		if [ -f "$(LIBS_DIR)/libonnxruntime.$(ONNX_VERSION).dylib" ]; then \
+			cp -f "$(LIBS_DIR)/libonnxruntime.$(ONNX_VERSION).dylib" "$(ONNX_EMBED_DIR)/libonnxruntime.$(ONNX_VERSION).dylib"; \
+		else \
+			echo "ONNX Runtime dylib not found in $(LIBS_DIR)"; \
+			exit 1; \
+		fi; \
+	else \
+		if [ -f "$(LIBS_DIR)/libonnxruntime.so.$(ONNX_VERSION)" ]; then \
+			cp -f "$(LIBS_DIR)/libonnxruntime.so.$(ONNX_VERSION)" "$(ONNX_EMBED_DIR)/libonnxruntime.so.$(ONNX_VERSION)"; \
+		elif [ -f "$(LIBS_DIR)/libonnxruntime.so" ]; then \
+			cp -f "$(LIBS_DIR)/libonnxruntime.so" "$(ONNX_EMBED_DIR)/libonnxruntime.so.$(ONNX_VERSION)"; \
+		else \
+			echo "ONNX Runtime .so not found in $(LIBS_DIR)"; \
+			exit 1; \
+		fi; \
+	fi
+	@echo "Embedded ONNX Runtime ready."
+
+test: onnx-embed
 	CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go test ./...
 
 # Build the React UI
@@ -54,13 +99,13 @@ ui-copy: ui-build
 	@echo "UI copied to $(EMBED_UI_DIR)"
 
 # Build the Go binary with embedded UI
-build: ui-copy
+build: ui-copy onnx-embed
 	@echo "Building $(BINARY_NAME)$(BINARY_EXT) with embedded UI..."
 	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)$(BINARY_EXT) $(CMD_PATH)
 	@echo "$(BINARY_NAME)$(BINARY_EXT) built successfully with embedded UI."
 
 # Build Go binary without UI (for development)
-build-no-ui:
+build-no-ui: onnx-embed
 	@echo "Building $(BINARY_NAME)$(BINARY_EXT) without UI..."
 	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)$(BINARY_EXT) $(CMD_PATH)
 	@echo "$(BINARY_NAME)$(BINARY_EXT) built successfully."
@@ -93,6 +138,7 @@ clean: ui-clean
 	@echo "Cleaning up..."
 	@go clean
 	@rm -f $(BINARY_NAME)
+	@rm -rf $(ONNX_EMBED_DIR)
 	@echo "Cleanup complete."
 
 # Development targets
