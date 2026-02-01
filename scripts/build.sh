@@ -134,7 +134,8 @@ build_go() {
     FAISS_STATIC_DIR="${FAISS_STATIC_DIR:-$(pwd)/libs-static}"
     if [ -f "$FAISS_STATIC_DIR/libfaiss_c.a" ] && [ -f "$FAISS_STATIC_DIR/libfaiss.a" ]; then
         if [ "$(uname -s)" = "Darwin" ]; then
-            export CGO_LDFLAGS="-L$FAISS_STATIC_DIR -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic -lc++ -lomp -lopenblas"
+            # macOS ld does not support -Wl,-Bstatic/-Wl,-Bdynamic; pass archives directly.
+            export CGO_LDFLAGS="$FAISS_STATIC_DIR/libfaiss_c.a $FAISS_STATIC_DIR/libfaiss.a -lc++ -lomp -lopenblas"
         else
             export CGO_LDFLAGS="-L$FAISS_STATIC_DIR -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic -lstdc++ -lgomp -lopenblas -lpthread -lm"
         fi

@@ -37,7 +37,11 @@ else
 	BINARY_EXT =
 	ifneq ($(FAISS_STATIC_C),)
 	ifneq ($(FAISS_STATIC),)
-		CGO_LDFLAGS_FAISS = -L$(FAISS_STATIC_DIR) -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic $(FAISS_STATIC_EXTRA)
+		ifeq ($(UNAME_S),Darwin)
+			CGO_LDFLAGS_FAISS = $(FAISS_STATIC_DIR)/libfaiss_c.a $(FAISS_STATIC_DIR)/libfaiss.a $(FAISS_STATIC_EXTRA)
+		else
+			CGO_LDFLAGS_FAISS = -L$(FAISS_STATIC_DIR) -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic $(FAISS_STATIC_EXTRA)
+		endif
 	else
 		CGO_LDFLAGS_FAISS = -L$(LIBS_DIR) -lfaiss_c -lfaiss $(RPATH_FLAG)
 	endif
