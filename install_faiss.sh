@@ -47,10 +47,11 @@ if [ $? -ne 0 ]; then
 fi
 
 # Step 6: Copy the compiled FAISS C API library to the project's libs directory
-echo "Copying libfaiss_c.so to project libs directory..."
-cp build/c_api/libfaiss_c.so ../libs/libfaiss_c.so
+echo "Copying FAISS libraries to project libs directory..."
+cp build/c_api/libfaiss_c.so* ../libs/
+cp build/faiss/libfaiss.so* ../libs/
 if [ $? -ne 0 ]; then
-    echo "Error: Failed to copy libfaiss_c.so."
+    echo "Error: Failed to copy FAISS libraries."
     exit 1
 fi
 

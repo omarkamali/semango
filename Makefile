@@ -18,6 +18,7 @@ LIBS_DIR ?= $(CURDIR)/libs
 ifeq ($(OS),Windows_NT)
 	RPATH_FLAG =
 	BINARY_EXT = .exe
+	CGO_LDFLAGS_FAISS =
 else
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Darwin)
@@ -26,12 +27,12 @@ else
 		RPATH_FLAG = -Wl,-rpath,'$$ORIGIN/libs'
 	endif
 	BINARY_EXT =
+	CGO_LDFLAGS_FAISS = -L$(LIBS_DIR) -lfaiss_c -lfaiss $(RPATH_FLAG)
 endif
 
-CGO_LDFLAGS_FAISS=-L$(LIBS_DIR) -lfaiss_c $(RPATH_FLAG)
 CGO_LDFLAGS_ONNX=-L$(LIBS_DIR) -lonnxruntime $(RPATH_FLAG)
 CGO_LDFLAGS_ALL=$(CGO_LDFLAGS_FAISS) $(CGO_LDFLAGS_ONNX)
-CGO_CPPFLAGS_ALL=-I$(CURDIR)
+CGO_CPPFLAGS_ALL=-I$(CURDIR) -I$(CURDIR)/include
 
 all: build
 
