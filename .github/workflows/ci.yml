@@ -142,10 +142,9 @@ jobs:
             find build -name "libfaiss_c*.dylib" -exec cp {} ../libs/ \;
             find build -name "libfaiss*.dylib" -exec cp {} ../libs/ \;
             # On macOS, ensure generic names exist for the linker
-            cd ../libs
-            [ -f libfaiss_c.dylib ] || ln -s libfaiss_c.*.dylib libfaiss_c.dylib 2>/dev/null || true
-            [ -f libfaiss.dylib ] || ln -s libfaiss.*.dylib libfaiss.dylib 2>/dev/null || true
-            cd ..
+            (cd ../libs && \
+              [ -f libfaiss_c.dylib ] || ln -s libfaiss_c.*.dylib libfaiss_c.dylib 2>/dev/null || true && \
+              [ -f libfaiss.dylib ] || ln -s libfaiss.*.dylib libfaiss.dylib 2>/dev/null || true)
           fi
           # Copy headers for CGO
           mkdir -p ../include/faiss
