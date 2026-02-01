@@ -1,3 +1,7 @@
+//go:build cgo && (linux || darwin)
+// +build cgo
+// +build linux darwin
+
 package storage
 
 import (

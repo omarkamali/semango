@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blevesearch/go-faiss"
 	"github.com/omarkamali/semango/internal/config"
 	"github.com/omarkamali/semango/internal/ingest"
 	"github.com/omarkamali/semango/internal/storage"
 	"github.com/omarkamali/semango/internal/util"
+	"github.com/omarkamali/semango/pkg/types"
 )
 
 // Searcher handles search operations using the real search implementation
@@ -122,7 +122,7 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int) ([]Result
 
 	// Open vector index
 	faissPath := filepath.Join("semango", "index", "faiss.index")
-	vecIdx, err := storage.NewFaissVectorIndex(ctx, faissPath, s.embedder.Dimension(), faiss.MetricInnerProduct)
+	vecIdx, err := storage.NewFaissVectorIndex(ctx, faissPath, s.embedder.Dimension(), types.MetricInnerProduct)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open vector index: %w", err)
 	}

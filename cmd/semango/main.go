@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/blevesearch/go-faiss"
 	"github.com/omarkamali/semango/internal/api"
 	"github.com/omarkamali/semango/internal/config"
 	"github.com/omarkamali/semango/internal/ingest"

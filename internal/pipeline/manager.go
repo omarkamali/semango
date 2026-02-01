@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/blevesearch/go-faiss"
 	"github.com/omarkamali/semango/internal/config"
 	"github.com/omarkamali/semango/internal/ingest"
 	"github.com/omarkamali/semango/internal/ingest/tabular"
 	"github.com/omarkamali/semango/internal/storage"
+	"github.com/omarkamali/semango/pkg/types"
 )
 
 // Manager glues: filesystem crawler -> loaders -> embedder -> indexes.
@@ -88,7 +88,7 @@ func (m *Manager) ProcessFile(ctx context.Context, relPath, absPath string) erro
 	defer bleveIdx.Close()
 
 	faissPath := filepath.Join("semango", "index", "faiss.index")
-	vecIdx, err := storage.NewFaissVectorIndex(ctx, faissPath, m.embedder.Dimension(), faiss.MetricInnerProduct)
+	vecIdx, err := storage.NewFaissVectorIndex(ctx, faissPath, m.embedder.Dimension(), types.MetricInnerProduct)
 	if err != nil {
 		return err
 	}

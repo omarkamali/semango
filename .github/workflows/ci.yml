@@ -119,7 +119,7 @@ jobs:
           path: |
             libs
             include/faiss
-          key: ${{ matrix.os }}-faiss-${{ env.FAISS_REF }}-v4
+          key: ${{ matrix.os }}-faiss-${{ env.FAISS_REF }}-v5
 
       - name: Build FAISS C API (Linux/macOS)
         if: steps.cache-faiss.outputs.cache-hit != 'true' && matrix.os != 'windows-latest'
@@ -134,13 +134,18 @@ jobs:
             CMAKE_OPTS="$CMAKE_OPTS -DOpenMP_ROOT=$(brew --prefix libomp)"
           fi
           cmake -B build $CMAKE_OPTS -DCMAKE_CXX_FLAGS="-I$PWD" .
-          make -C build -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) faiss_c
+          make -C build -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) faiss faiss_c
           if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            cp build/c_api/libfaiss_c.so* ../libs/
-            cp build/faiss/libfaiss.so* ../libs/
+            find build -name "libfaiss_c.so*" -exec cp -d {} ../libs/ \;
+            find build -name "libfaiss.so*" -exec cp -d {} ../libs/ \;
           else
-            cp build/c_api/libfaiss_c.dylib* ../libs/
-            cp build/faiss/libfaiss.dylib* ../libs/
+            find build -name "libfaiss_c*.dylib" -exec cp {} ../libs/ \;
+            find build -name "libfaiss*.dylib" -exec cp {} ../libs/ \;
+            # On macOS, ensure generic names exist for the linker
+            cd ../libs
+            [ -f libfaiss_c.dylib ] || ln -s libfaiss_c.*.dylib libfaiss_c.dylib 2>/dev/null || true
+            [ -f libfaiss.dylib ] || ln -s libfaiss.*.dylib libfaiss.dylib 2>/dev/null || true
+            cd ..
           fi
           # Copy headers for CGO
           cp -r c_api ../include/faiss/
