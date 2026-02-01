@@ -135,9 +135,19 @@ build_go() {
     if [ -f "$FAISS_STATIC_DIR/libfaiss_c.a" ] && [ -f "$FAISS_STATIC_DIR/libfaiss.a" ]; then
         if [ "$(uname -s)" = "Darwin" ]; then
             # macOS ld does not support -Wl,-Bstatic/-Wl,-Bdynamic; pass archives directly.
-            LIBOMP_PREFIX="$(brew --prefix libomp 2>/dev/null || true)"
-            OPENBLAS_PREFIX="$(brew --prefix openblas 2>/dev/null || true)"
-            export CGO_LDFLAGS="$FAISS_STATIC_DIR/libfaiss_c.a $FAISS_STATIC_DIR/libfaiss.a -lc++ ${LIBOMP_PREFIX:+-L$LIBOMP_PREFIX/lib} -lomp ${OPENBLAS_PREFIX:+-L$OPENBLAS_PREFIX/lib} -lopenblas ${LIBOMP_PREFIX:+-Wl,-rpath,$LIBOMP_PREFIX/lib} ${OPENBLAS_PREFIX:+-Wl,-rpath,$OPENBLAS_PREFIX/lib}"
+            if command -v brew >/dev/null 2>&1; then
+                LIBOMP_PREFIX="$(brew --prefix libomp 2>/dev/null || true)"
+                OPENBLAS_PREFIX="$(brew --prefix openblas 2>/dev/null || true)"
+            fi
+            # Fall back to common Homebrew prefixes (CI can lack `brew` on PATH in some contexts).
+            LIBOMP_LIBDIR="${LIBOMP_PREFIX:+$LIBOMP_PREFIX/lib}"
+            OPENBLAS_LIBDIR="${OPENBLAS_PREFIX:+$OPENBLAS_PREFIX/lib}"
+            [ -n "$LIBOMP_LIBDIR" ] || { [ -d /opt/homebrew/opt/libomp/lib ] && LIBOMP_LIBDIR=/opt/homebrew/opt/libomp/lib; }
+            [ -n "$LIBOMP_LIBDIR" ] || { [ -d /usr/local/opt/libomp/lib ] && LIBOMP_LIBDIR=/usr/local/opt/libomp/lib; }
+            [ -n "$OPENBLAS_LIBDIR" ] || { [ -d /opt/homebrew/opt/openblas/lib ] && OPENBLAS_LIBDIR=/opt/homebrew/opt/openblas/lib; }
+            [ -n "$OPENBLAS_LIBDIR" ] || { [ -d /usr/local/opt/openblas/lib ] && OPENBLAS_LIBDIR=/usr/local/opt/openblas/lib; }
+
+            export CGO_LDFLAGS="$FAISS_STATIC_DIR/libfaiss_c.a $FAISS_STATIC_DIR/libfaiss.a -lc++ ${LIBOMP_LIBDIR:+-L$LIBOMP_LIBDIR} -lomp ${OPENBLAS_LIBDIR:+-L$OPENBLAS_LIBDIR} -lopenblas ${LIBOMP_LIBDIR:+-Wl,-rpath,$LIBOMP_LIBDIR} ${OPENBLAS_LIBDIR:+-Wl,-rpath,$OPENBLAS_LIBDIR}"
         else
             export CGO_LDFLAGS="-L$FAISS_STATIC_DIR -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic -lstdc++ -lgomp -lopenblas -lpthread -lm"
         fi

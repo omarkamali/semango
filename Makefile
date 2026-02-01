@@ -28,8 +28,16 @@ ifeq ($(OS),Windows_NT)
 else
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Darwin)
+		# GitHub Actions runners sometimes don't have `brew` on PATH for Make's $(shell ...).
+		# Prefer standard Homebrew prefixes and only include paths that exist.
+		LIBOMP_LIBDIR := $(firstword $(wildcard /opt/homebrew/opt/libomp/lib /usr/local/opt/libomp/lib))
+		OPENBLAS_LIBDIR := $(firstword $(wildcard /opt/homebrew/opt/openblas/lib /usr/local/opt/openblas/lib))
 		RPATH_FLAG = -Wl,-rpath,@loader_path/libs
-		FAISS_STATIC_EXTRA = -lc++ -lomp -lopenblas
+		FAISS_STATIC_EXTRA = -lc++ \
+			$(if $(LIBOMP_LIBDIR),-L$(LIBOMP_LIBDIR),) -lomp \
+			$(if $(OPENBLAS_LIBDIR),-L$(OPENBLAS_LIBDIR),) -lopenblas \
+			$(if $(LIBOMP_LIBDIR),-Wl,-rpath,$(LIBOMP_LIBDIR),) \
+			$(if $(OPENBLAS_LIBDIR),-Wl,-rpath,$(OPENBLAS_LIBDIR),)
 	else
 		RPATH_FLAG = -Wl,-rpath,'$$ORIGIN/libs'
 		FAISS_STATIC_EXTRA = -lstdc++ -lgomp -lopenblas -lpthread -lm
