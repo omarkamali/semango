@@ -37,7 +37,13 @@ var rootCmd = &cobra.Command{
 	Short: "Semango is a semantic search engine.",
 	Long:  `A fast and flexible semantic search engine capable of indexing and searching various file types.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		_ = util.Logger                                                                     // Ensure logger is initialized
+		_ = util.Logger // Ensure logger is initialized
+
+		verbose, _ := cmd.Flags().GetBool("verbose")
+		if verbose {
+			util.SetLogLevel(slog.LevelDebug)
+		}
+
 		if cmd.Name() == "init" || (cmd.Parent() != nil && cmd.Parent().Name() == "init") { // also skip for subcommands of init if any
 			slog.Debug("Skipping configuration loading for init command or its subcommands")
 			return nil
@@ -412,6 +418,7 @@ func init() {
 	rootCmd.AddCommand(installCmd)
 	initCmd.Flags().StringP("file", "f", config.DefaultConfigPath, "Path to write the configuration file")
 	rootCmd.PersistentFlags().StringP("config", "c", config.DefaultConfigPath, "Path to the configuration file")
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose logging")
 }
 
 func Execute() {
