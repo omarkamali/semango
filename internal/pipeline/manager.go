@@ -2,7 +2,9 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/omarkamali/semango/internal/config"
@@ -97,7 +99,7 @@ func (m *Manager) ProcessFile(ctx context.Context, relPath, absPath string) erro
 
 	// Index loop
 	for _, r := range reps {
-		if err := bleveIdx.IndexDocument(r.ID, r.Text, r.Meta); err != nil {
+		if err := bleveIdx.IndexDocument(r.ID, r.Text, r.Path, r.Meta); err != nil {
 			slog.Error("bleve index error", "id", r.ID, "err", err)
 		}
 		if r.Vector != nil {
@@ -107,5 +109,84 @@ func (m *Manager) ProcessFile(ctx context.Context, relPath, absPath string) erro
 		}
 	}
 	slog.Info("Indexed", "file", relPath, "chunks", len(reps))
+	return nil
+}
+
+// RunIndexing performs a full crawl and indexes all files.
+func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
+	slog.Info("Starting indexing process...")
+	rootDir, err := os.Getwd()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	filePathChan := make(chan string, 100)
+	errChan := make(chan error, 1)
+
+	go ingest.Crawl(m.cfg.Files, filePathChan, errChan)
+
+	var filesProcessedCount int
+	for relPath := range filePathChan {
+		absPath := filepath.Join(rootDir, relPath)
+		if err := m.ProcessFile(ctx, relPath, absPath); err != nil {
+			slog.Error("Failed to process file", "path", relPath, "error", err)
+			continue
+		}
+		filesProcessedCount++
+	}
+
+	select {
+	case err := <-errChan:
+		if err != nil {
+			return filesProcessedCount, err
+		}
+	default:
+	}
+
+	slog.Info("Indexing process completed.", "files_processed", filesProcessedCount)
+	return filesProcessedCount, nil
+}
+
+// RunReconciliation ensures the index is up to date with the filesystem.
+func (m *Manager) RunReconciliation(ctx context.Context) error {
+	slog.Info("Running index reconciliation...")
+
+	// 1. Incremental indexing (add/update)
+	// Currently ProcessFile always re-indexes, which is safe but not most efficient.
+	_, err := m.RunIndexing(ctx)
+	if err != nil {
+		return err
+	}
+
+	// 2. Cleanup missing files
+	bleveIdx, err := storage.OpenOrCreateBleveIndex(m.cfg.Lexical.IndexPath)
+	if err != nil {
+		return err
+	}
+	defer bleveIdx.Close()
+
+	allDocs, err := bleveIdx.GetAllDocs()
+	if err != nil {
+		return err
+	}
+
+	rootDir, _ := os.Getwd()
+	deletedCount := 0
+	for id, relPath := range allDocs {
+		absPath := filepath.Join(rootDir, relPath)
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			slog.Info("File no longer exists, removing from index", "path", relPath)
+			if err := bleveIdx.Delete(id); err != nil {
+				slog.Error("Failed to delete from bleve", "id", id, "err", err)
+			}
+			deletedCount++
+			// Note: We skip FAISS deletion for now as it's not easily supported by go-faiss
+		}
+	}
+
+	if deletedCount > 0 {
+		slog.Info("Cleanup completed", "deleted_docs", deletedCount)
+	}
+
 	return nil
 }

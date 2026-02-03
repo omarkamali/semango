@@ -15,8 +15,9 @@ func TestBleveIndex_Basic(t *testing.T) {
 
 	id := "doc1"
 	text := "hello world this is a test document"
+	path := "test.txt"
 	meta := map[string]string{"foo": "bar"}
-	if err := idx.IndexDocument(id, text, meta); err != nil {
+	if err := idx.IndexDocument(id, text, path, meta); err != nil {
 		t.Fatalf("failed to index document: %v", err)
 	}
 

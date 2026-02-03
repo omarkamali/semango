@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/omarkamali/semango/internal/api"
 	"github.com/omarkamali/semango/internal/config"
@@ -116,6 +117,40 @@ var serverCmd = &cobra.Command{
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
+		// Requirement 1 & 2: Automatic indexing and reconciliation
+		go func() {
+			// Check if index exists by getting stats
+			stats, err := searcher.GetStats(ctx)
+			if err != nil {
+				slog.Error("Failed to check index stats", "error", err)
+			}
+
+			// If no documents, trigger initial indexing
+			if stats != nil && stats.LexicalCount == 0 {
+				slog.Info("No index found, starting initial indexing...")
+			}
+
+			mgr := pipeline.NewManager(AppConfig, searcher.Embedder())
+			if err := mgr.RunReconciliation(ctx); err != nil {
+				slog.Error("Initial reconciliation failed", "error", err)
+			}
+
+			// Periodic reconciliation
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					slog.Info("Running periodic reconciliation...")
+					if err := mgr.RunReconciliation(ctx); err != nil {
+						slog.Error("Periodic reconciliation failed", "error", err)
+					}
+				}
+			}
+		}()
+
 		// Handle shutdown signals
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -144,103 +179,45 @@ var indexCmd = &cobra.Command{
 	Long:  `Crawls the filesystem according to the include/exclude patterns in semango.yml and processes files for indexing.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if AppConfig == nil {
-			// This is a programming error or an issue with command setup, should not happen if PersistentPreRunE works.
-			// Using NewError as there's no underlying specific Go error to wrap here.
-			cfgErr := util.NewError("Configuration not loaded before index command")
-			util.LogError(util.Logger, cfgErr)
-			return cfgErr
+			return util.NewError("Configuration not loaded before index command")
 		}
-		slog.Info("Starting indexing process...", "files_config", AppConfig.Files)
 
-		rootDir, err := os.Getwd()
+		embedder, err := ingest.NewEmbedderFromConfig(AppConfig.Embedding)
 		if err != nil {
-			wrappedErr := util.WrapError(err, "Failed to get working directory for indexing")
-			util.LogError(util.Logger, wrappedErr)
-			return wrappedErr
-		}
-
-		filePathChan := make(chan string, 100)
-		errChan := make(chan error, 1)
-
-		// Initialize embedder with proper validation
-		var embedder ingest.Embedder
-		{
-			prov := AppConfig.Embedding.Provider
-			switch prov {
-			case "openai", "": // default to openai
-				apiKey := os.Getenv("OPENAI_API_KEY")
-				if apiKey == "" {
-					return util.NewError("OpenAI API key is required but not found in OPENAI_API_KEY environment variable")
-				}
-				openCfg := ingest.OpenAIConfig{
-					APIKey:     apiKey,
-					Model:      AppConfig.Embedding.Model,
-					BatchSize:  AppConfig.Embedding.BatchSize,
-					Concurrent: AppConfig.Embedding.Concurrent,
-				}
-				e, err := ingest.NewOpenAIEmbedder(openCfg)
-				if err != nil {
-					return util.WrapError(err, "Failed to create OpenAI embedder")
-				}
-				embedder = e
-			case "local":
-				if AppConfig.Embedding.LocalModelPath == "" {
-					return util.NewError("Local model path is required for local embedder provider")
-				}
-				localCfg := ingest.LocalEmbedderConfig{
-					ModelPath: AppConfig.Embedding.LocalModelPath,
-					CacheDir:  AppConfig.Embedding.ModelCacheDir,
-					BatchSize: AppConfig.Embedding.BatchSize,
-					MaxLength: 512, // Default max length
-				}
-				// Validate configuration
-				if err := ingest.ValidateModelConfig(localCfg); err != nil {
-					return util.WrapError(err, "Invalid local embedder configuration")
-				}
-				e, err := ingest.NewLocalEmbedder(localCfg)
-				if err != nil {
-					return util.WrapError(err, "Failed to create local embedder")
-				}
-				embedder = e
-			default:
-				return util.NewError(fmt.Sprintf("Unsupported embedder provider: %s. Supported providers: openai, local", prov))
-			}
+			return util.WrapError(err, "Failed to initialize embedder")
 		}
 
 		mgr := pipeline.NewManager(AppConfig, embedder)
-
-		go ingest.Crawl(AppConfig.Files, filePathChan, errChan)
-
-		var filesProcessedCount int
-
-		for relPath := range filePathChan {
-			absPath := filepath.Join(rootDir, relPath)
-			if err := mgr.ProcessFile(context.Background(), relPath, absPath); err != nil {
-				util.LogError(util.Logger, util.WrapError(err, "Failed to process file", slog.String("path", relPath)))
-				continue
-			}
-			filesProcessedCount++
+		if err := mgr.RunReconciliation(context.Background()); err != nil {
+			return util.WrapError(err, "Reconciliation failed")
 		}
 
-		slog.Debug("filePathChan closed.", "files_crawled_count", filesProcessedCount)
-
-		var crawlerError error
-		select {
-		case err := <-errChan:
-			if err != nil {
-				crawlerError = err
-			}
-		default:
-		}
-
-		if crawlerError != nil {
-			finalErr := util.WrapError(crawlerError, "Indexing failed due to crawler error")
-			util.LogError(util.Logger, finalErr)
-			return finalErr
-		}
-
-		slog.Info("Indexing process completed.", "files_processed", filesProcessedCount)
+		slog.Info("Indexing and reconciliation process completed.")
 		return nil
+	},
+}
+
+var indexStatsCmd = &cobra.Command{
+	Use:   "stats",
+	Short: "Show indexing statistics.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if AppConfig == nil {
+			return util.NewError("Configuration not loaded before stats command")
+		}
+
+		searcher, err := search.NewSearcher(AppConfig)
+		if err != nil {
+			return util.WrapError(err, "Failed to initialize searcher")
+		}
+
+		stats, err := searcher.GetStats(context.Background())
+		if err != nil {
+			return util.WrapError(err, "Failed to get index stats")
+		}
+
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(stats)
 	},
 }
 
@@ -272,49 +249,10 @@ var searchCmd = &cobra.Command{
 
 		// Vector index path same as indexing
 		faissPath := filepath.Join(filepath.Dir(AppConfig.Lexical.IndexPath), "faiss.index")
-		// Initialize embedder (same logic as indexCmd)
-		var embedder ingest.Embedder
-		{
-			prov := AppConfig.Embedding.Provider
-			switch prov {
-			case "openai", "": // default to openai
-				apiKey := os.Getenv("OPENAI_API_KEY")
-				if apiKey == "" {
-					return util.NewError("OpenAI API key is required but not found in OPENAI_API_KEY environment variable")
-				}
-				openCfg := ingest.OpenAIConfig{
-					APIKey:     apiKey,
-					Model:      AppConfig.Embedding.Model,
-					BatchSize:  AppConfig.Embedding.BatchSize,
-					Concurrent: AppConfig.Embedding.Concurrent,
-				}
-				e, err := ingest.NewOpenAIEmbedder(openCfg)
-				if err != nil {
-					return util.WrapError(err, "Failed to create OpenAI embedder")
-				}
-				embedder = e
-			case "local":
-				if AppConfig.Embedding.LocalModelPath == "" {
-					return util.NewError("Local model path is required for local embedder provider")
-				}
-				localCfg := ingest.LocalEmbedderConfig{
-					ModelPath: AppConfig.Embedding.LocalModelPath,
-					CacheDir:  AppConfig.Embedding.ModelCacheDir,
-					BatchSize: AppConfig.Embedding.BatchSize,
-					MaxLength: 512, // Default max length
-				}
-				// Validate configuration
-				if err := ingest.ValidateModelConfig(localCfg); err != nil {
-					return util.WrapError(err, "Invalid local embedder configuration")
-				}
-				e, err := ingest.NewLocalEmbedder(localCfg)
-				if err != nil {
-					return util.WrapError(err, "Failed to create local embedder")
-				}
-				embedder = e
-			default:
-				return util.NewError(fmt.Sprintf("Unsupported embedder provider: %s. Supported providers: openai, local", prov))
-			}
+		// Initialize embedder (same logic as ingest.NewEmbedderFromConfig)
+		embedder, err := ingest.NewEmbedderFromConfig(AppConfig.Embedding)
+		if err != nil {
+			return util.WrapError(err, "Failed to initialize embedder")
 		}
 
 		queryVecs, err := embedder.Embed(context.Background(), []string{query})
@@ -412,6 +350,7 @@ func init() {
 	// Logger is initialized by importing internal/util
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(indexCmd)
+	indexCmd.AddCommand(indexStatsCmd)
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(versionCmd)

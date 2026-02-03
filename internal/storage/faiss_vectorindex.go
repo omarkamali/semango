@@ -113,6 +113,13 @@ func (f *FaissVectorIndex) Dimension() int {
 	return f.fi.Dim()
 }
 
+func (f *FaissVectorIndex) Count() int64 {
+	if f.fi == nil || f.fi.index == nil {
+		return 0
+	}
+	return f.fi.index.Ntotal()
+}
+
 func (f *FaissVectorIndex) Close() error {
 	// Save index before closing to persist vectors.
 	_ = f.fi.Save(context.Background())

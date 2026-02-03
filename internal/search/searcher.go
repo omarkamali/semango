@@ -11,7 +11,6 @@ import (
 	"github.com/omarkamali/semango/internal/config"
 	"github.com/omarkamali/semango/internal/ingest"
 	"github.com/omarkamali/semango/internal/storage"
-	"github.com/omarkamali/semango/internal/util"
 	"github.com/omarkamali/semango/pkg/types"
 )
 
@@ -35,60 +34,33 @@ type Result struct {
 
 // Stats represents search statistics
 type Stats struct {
-	TotalDocuments int `json:"total_documents"`
-	TotalChunks    int `json:"total_chunks"`
-	IndexSize      int `json:"index_size_bytes"`
+	TotalDocuments int    `json:"total_documents"`
+	TotalChunks    int    `json:"total_chunks"`
+	IndexSize      int    `json:"index_size_bytes"`
+	LexicalPath    string `json:"lexical_path"`
+	VectorPath     string `json:"vector_path"`
+	LexicalCount   uint64 `json:"lexical_count"`
+	VectorCount    int64  `json:"vector_count"`
+	LexicalSize    int64  `json:"lexical_size_bytes"`
+	VectorSize     int64  `json:"vector_size_bytes"`
 }
 
 // NewSearcher creates a new searcher instance with real search capabilities
 func NewSearcher(cfg *config.Config) (*Searcher, error) {
-	// Initialize embedder (same logic as search command)
-	var embedder ingest.Embedder
-	prov := cfg.Embedding.Provider
-	switch prov {
-	case "openai", "": // default to openai
-		apiKey := os.Getenv("OPENAI_API_KEY")
-		if apiKey == "" {
-			return nil, util.NewError("OpenAI API key is required but not found in OPENAI_API_KEY environment variable")
-		}
-		openCfg := ingest.OpenAIConfig{
-			APIKey:     apiKey,
-			Model:      cfg.Embedding.Model,
-			BatchSize:  cfg.Embedding.BatchSize,
-			Concurrent: cfg.Embedding.Concurrent,
-		}
-		e, err := ingest.NewOpenAIEmbedder(openCfg)
-		if err != nil {
-			return nil, util.WrapError(err, "Failed to create OpenAI embedder")
-		}
-		embedder = e
-	case "local":
-		if cfg.Embedding.LocalModelPath == "" {
-			return nil, util.NewError("Local model path is required for local embedder provider")
-		}
-		localCfg := ingest.LocalEmbedderConfig{
-			ModelPath: cfg.Embedding.LocalModelPath,
-			CacheDir:  cfg.Embedding.ModelCacheDir,
-			BatchSize: cfg.Embedding.BatchSize,
-			MaxLength: 512, // Default max length
-		}
-		// Validate configuration
-		if err := ingest.ValidateModelConfig(localCfg); err != nil {
-			return nil, util.WrapError(err, "Invalid local embedder configuration")
-		}
-		e, err := ingest.NewLocalEmbedder(localCfg)
-		if err != nil {
-			return nil, util.WrapError(err, "Failed to create local embedder")
-		}
-		embedder = e
-	default:
-		return nil, util.NewError(fmt.Sprintf("Unsupported embedder provider: %s. Supported providers: openai, local", prov))
+	embedder, err := ingest.NewEmbedderFromConfig(cfg.Embedding)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Searcher{
 		config:   cfg,
 		embedder: embedder,
 	}, nil
+}
+
+// Embedder returns the embedder instance
+func (s *Searcher) Embedder() ingest.Embedder {
+	return s.embedder
 }
 
 // Search performs a real search query using the existing search implementation
@@ -386,28 +358,53 @@ func combineScores(lexicalScore, semanticScore float64, fusion string) float64 {
 
 // GetStats returns real search index statistics
 func (s *Searcher) GetStats(ctx context.Context) (*Stats, error) {
-	stats := &Stats{}
+	stats := &Stats{
+		LexicalPath: s.config.Lexical.IndexPath,
+		VectorPath:  filepath.Join(filepath.Dir(s.config.Lexical.IndexPath), "faiss.index"),
+	}
 
-	// Get Bleve stats - estimate based on search results
+	// Get Bleve stats
 	bleveIdx, err := storage.OpenOrCreateBleveIndex(s.config.Lexical.IndexPath)
 	if err == nil {
 		defer bleveIdx.Close()
-		// Estimate document count by doing a broad search
-		if hits, err := bleveIdx.SearchText("*", 1000); err == nil {
-			stats.TotalDocuments = len(hits)
+		if count, err := bleveIdx.DocCount(); err == nil {
+			stats.LexicalCount = count
+			stats.TotalChunks = int(count)
 		}
 	}
 
 	// Get FAISS stats
-	faissPath := filepath.Join(filepath.Dir(s.config.Lexical.IndexPath), "faiss.index")
-	if info, err := os.Stat(faissPath); err == nil {
-		stats.IndexSize = int(info.Size())
+	dim := s.embedder.Dimension()
+	vecIdx, err := storage.NewFaissVectorIndex(ctx, stats.VectorPath, dim, types.MetricInnerProduct)
+	if err == nil {
+		defer vecIdx.Close()
+		stats.VectorCount = vecIdx.Count()
 	}
 
-	// Estimate chunks (rough approximation)
-	stats.TotalChunks = stats.TotalDocuments * 3 // Rough estimate
+	// File sizes
+	if info, err := os.Stat(stats.VectorPath); err == nil {
+		stats.VectorSize = info.Size()
+	}
+	// For Bleve, we should probably check the directory size since it's a directory by default
+	stats.LexicalSize = calculateDirSize(stats.LexicalPath)
+
+	stats.IndexSize = int(stats.LexicalSize + stats.VectorSize)
 
 	return stats, nil
+}
+
+func calculateDirSize(path string) int64 {
+	var size int64
+	_ = filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size
 }
 
 // Helper functions
