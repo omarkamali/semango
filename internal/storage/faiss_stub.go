@@ -1,5 +1,5 @@
-//go:build !cgo || (!linux && !darwin)
-// +build !cgo !linux,!darwin
+//go:build !faiss || !cgo || (!linux && !darwin)
+// +build !faiss !cgo !linux,!darwin
 
 package storage
 
@@ -51,5 +51,7 @@ func (f *FaissVectorIndex) Search(_ context.Context, _ []float32, _ int) ([]Vect
 }
 
 func (f *FaissVectorIndex) Dimension() int { return 0 }
+
+func (f *FaissVectorIndex) Count() int64 { return 0 }
 
 func (f *FaissVectorIndex) Close() error { return errFaissUnavailable }

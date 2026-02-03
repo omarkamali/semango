@@ -1,0 +1,49 @@
+embedding:
+    provider: local
+    model: all-MiniLM-L6-v2-onnx
+    local_model_path: onnx-models/all-MiniLM-L6-v2-onnx
+    batch_size: 48
+    concurrent: 4
+    model_cache_dir: ./reproduction/cache
+lexical:
+    enabled: true
+    index_path: ./reproduction/index/bleve
+    bm25_k1: 1.2
+    bm25_b: 0.75
+reranker:
+    enabled: false
+    provider: cohere
+    model: rerank-english-v3.0
+    batch_size: 32
+    per_request_override: true
+hybrid:
+    vector_weight: 0.7
+    lexical_weight: 0.3
+    fusion: linear
+files:
+    include:
+        - 'reproduction/test.pdf'
+    exclude:
+        - .git/**
+        - node_modules/**
+        - vendor/**
+server:
+    host: 0.0.0.0
+    port: 8181
+    auth:
+        type: token
+        token_env: SEMANGO_TOKENS
+    tls_cert: ""
+    tls_key: ""
+plugins:
+    - plugins/
+    - ../shared/my_custom.so
+ui:
+    enabled: true
+mcp:
+    enabled: true
+tabular:
+    max_rows_embedded: 1000
+    sampling: random
+    min_text_tokens: 5
+    delimiter: ","

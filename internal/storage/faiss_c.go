@@ -1,6 +1,5 @@
-//go:build cgo && (linux || darwin)
-// +build cgo
-// +build linux darwin
+//go:build (cgo && faiss && linux) || (cgo && faiss && darwin)
+// +build cgo,faiss,linux cgo,faiss,darwin
 
 package storage
 
