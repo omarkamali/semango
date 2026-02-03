@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/dslipak/pdf"
 )
 
 // Representation is defined in representation.go
@@ -243,13 +245,125 @@ func (cl *CodeLoader) detectLanguage(path string) string {
 	}
 }
 
-// PDFLoader is a stub for PDF files
-type PDFLoader struct{}
+// PDFLoader handles PDF files.
+type PDFLoader struct {
+	chunkSize int
+	overlap   int
+}
+
+// NewPDFLoader returns a PDFLoader with chunk configuration.
+func NewPDFLoader(chunkSize, overlap int) *PDFLoader {
+	if chunkSize <= 0 {
+		chunkSize = 1000
+	}
+	if overlap < 0 {
+		overlap = 0
+	}
+	return &PDFLoader{chunkSize: chunkSize, overlap: overlap}
+}
 
 func (pl *PDFLoader) Extensions() []string { return []string{".pdf"} }
+
 func (pl *PDFLoader) Load(ctx context.Context, relPath string, absPath string) ([]Representation, error) {
-	// TODO: Implement PDF text extraction and OCR
-	return nil, nil
+	slog.Info("Loading PDF file", "relative_path", relPath, "absolute_path", absPath)
+
+	r, err := pdf.Open(absPath)
+	if err != nil {
+		slog.Error("Failed to open PDF file", "path", absPath, "error", err)
+		return nil, err
+	}
+
+	var textContent strings.Builder
+	for i := 1; i <= r.NumPage(); i++ {
+		p := r.Page(i)
+		if p.V.IsNull() {
+			continue
+		}
+		text, err := p.GetPlainText(nil)
+		if err != nil {
+			slog.Warn("Failed to extract text from PDF page", "path", absPath, "page", i, "error", err)
+			continue
+		}
+		textContent.WriteString(text)
+		textContent.WriteString("\n")
+	}
+
+	allText := textContent.String()
+	if len(allText) == 0 {
+		slog.Warn("No text extracted from PDF", "path", absPath)
+		return nil, nil
+	}
+
+	// For now, use a simple chunking similar to TextLoader
+	// TODO: Shared chunking utility
+	var reps []Representation
+	size := pl.chunkSize
+	ov := pl.overlap
+
+	if size <= 0 || len(allText) <= size {
+		chunkID := ChunkID(relPath, "text", 0)
+		reps = append(reps, Representation{
+			ID:       chunkID,
+			Path:     relPath,
+			Modality: "text",
+			Text:     allText,
+			Meta: map[string]string{
+				"source": "PDFLoader",
+				"offset": "0",
+				"path":   relPath,
+			},
+		})
+		return reps, nil
+	}
+
+	start := 0
+	offset := 0
+	for start < len(allText) {
+		end := start + size
+		if end > len(allText) {
+			end = len(allText)
+		}
+
+		if end < len(allText) {
+			for end > start && !isWordBoundary(allText[end]) {
+				end--
+			}
+			if end == start {
+				end = start + size
+			}
+		}
+
+		chunk := allText[start:end]
+		chunkID := ChunkID(relPath, "text", int64(offset))
+		reps = append(reps, Representation{
+			ID:       chunkID,
+			Path:     relPath,
+			Modality: "text",
+			Text:     chunk,
+			Meta: map[string]string{
+				"source": "PDFLoader",
+				"offset": strconv.Itoa(start),
+				"path":   relPath,
+			},
+		})
+
+		if end == len(allText) {
+			break
+		}
+
+		nextStart := end - ov
+		if nextStart <= start {
+			nextStart = start + 1
+		}
+		for nextStart < len(allText) && !isWordBoundary(allText[nextStart]) {
+			nextStart++
+		}
+		start = nextStart
+		offset++
+	}
+
+	slog.Debug("Created PDF chunks", "chunks", len(reps), "relPath", relPath)
+	return reps, nil
 }
 
 // ImageLoader is a stub for image files

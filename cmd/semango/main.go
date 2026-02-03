@@ -265,7 +265,7 @@ var searchCmd = &cobra.Command{
 		}
 
 		// Vector index path same as indexing
-		faissPath := filepath.Join("semango", "index", "faiss.index")
+		faissPath := filepath.Join(filepath.Dir(AppConfig.Lexical.IndexPath), "faiss.index")
 		// Initialize embedder (same logic as indexCmd)
 		var embedder ingest.Embedder
 		{

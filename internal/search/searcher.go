@@ -121,7 +121,7 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int) ([]Result
 	}
 
 	// Open vector index
-	faissPath := filepath.Join("semango", "index", "faiss.index")
+	faissPath := filepath.Join(filepath.Dir(s.config.Lexical.IndexPath), "faiss.index")
 	vecIdx, err := storage.NewFaissVectorIndex(ctx, faissPath, s.embedder.Dimension(), types.MetricInnerProduct)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open vector index: %w", err)
@@ -399,7 +399,7 @@ func (s *Searcher) GetStats(ctx context.Context) (*Stats, error) {
 	}
 
 	// Get FAISS stats
-	faissPath := filepath.Join("semango", "index", "faiss.index")
+	faissPath := filepath.Join(filepath.Dir(s.config.Lexical.IndexPath), "faiss.index")
 	if info, err := os.Stat(faissPath); err == nil {
 		stats.IndexSize = int(info.Size())
 	}

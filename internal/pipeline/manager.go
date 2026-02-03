@@ -24,7 +24,8 @@ func NewManager(cfg *config.Config, embedder ingest.Embedder) *Manager {
 	ls := []ingest.Loader{
 		ingest.NewTextLoader(cfg.Files.ChunkSize, cfg.Files.ChunkOverlap),
 		ingest.NewCodeLoader(false, 5*1024*1024),
-		&ingest.PDFLoader{}, &ingest.ImageLoader{},
+		ingest.NewPDFLoader(cfg.Files.ChunkSize, cfg.Files.ChunkOverlap),
+		&ingest.ImageLoader{},
 		tabular.NewCSVLoader(cfg.Tabular),
 		tabular.NewJSONLoader(cfg.Tabular),
 		tabular.NewParquetLoader(cfg.Tabular),
@@ -87,7 +88,7 @@ func (m *Manager) ProcessFile(ctx context.Context, relPath, absPath string) erro
 	}
 	defer bleveIdx.Close()
 
-	faissPath := filepath.Join("semango", "index", "faiss.index")
+	faissPath := filepath.Join(filepath.Dir(m.cfg.Lexical.IndexPath), "faiss.index")
 	vecIdx, err := storage.NewFaissVectorIndex(ctx, faissPath, m.embedder.Dimension(), types.MetricInnerProduct)
 	if err != nil {
 		return err
