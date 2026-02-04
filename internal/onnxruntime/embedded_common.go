@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	embedOnce     sync.Once
-	embedPath     string
-	embedPathErr  error
+	embedOnce    sync.Once
+	embedPath    string
+	embedPathErr error
 )
 
 // EnsureSharedLibrary writes the embedded onnxruntime shared library to disk

@@ -76,7 +76,9 @@ func (l *JSONLoader) Load(ctx context.Context, relPath string, absPath string) (
 			_, _ = dec.Token()
 		} else {
 			// Single object (tok is already part of object?), rewind impossible; reread entire file
-			f.Seek(0, io.SeekStart)
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				return nil, err
+			}
 			var obj map[string]interface{}
 			if err := json.NewDecoder(f).Decode(&obj); err != nil {
 				return nil, err

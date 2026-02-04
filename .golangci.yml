@@ -6,13 +6,6 @@ run:
   modules-download-mode: readonly
 
 issues:
-  exclude-dirs:
-    - internal/storage
-    - internal/pipeline
-    - internal/search
-    - internal/api
-    - internal/ingest
-    - cmd
   exclude-rules:
     # Exclude some linters from running on tests files
     - path: _test\.go

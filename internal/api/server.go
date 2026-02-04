@@ -115,7 +115,9 @@ func (s *Server) setupUIRoutes() {
 		}
 		defer file.Close()
 		c.Header("Content-Type", "image/svg+xml")
-		io.Copy(c.Writer, file)
+		if _, err := io.Copy(c.Writer, file); err != nil {
+			s.logger.Warn("Failed to write embedded UI asset", "path", "vite.svg", "err", err)
+		}
 	})
 
 	// Serve index.html for root and SPA routes
@@ -136,7 +138,9 @@ func (s *Server) setupUIRoutes() {
 
 		c.Header("Content-Type", "text/html")
 		c.Status(http.StatusOK)
-		io.Copy(c.Writer, indexFile)
+		if _, err := io.Copy(c.Writer, indexFile); err != nil {
+			s.logger.Warn("Failed to write embedded UI index", "err", err)
+		}
 	})
 
 	// Serve index.html for root
@@ -150,7 +154,9 @@ func (s *Server) setupUIRoutes() {
 
 		c.Header("Content-Type", "text/html")
 		c.Status(http.StatusOK)
-		io.Copy(c.Writer, indexFile)
+		if _, err := io.Copy(c.Writer, indexFile); err != nil {
+			s.logger.Warn("Failed to write embedded UI index", "err", err)
+		}
 	})
 }
 

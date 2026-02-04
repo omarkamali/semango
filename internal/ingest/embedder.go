@@ -60,4 +60,4 @@ func (n *NoopEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, 
 	}
 	return result, nil
 }
-func (n *NoopEmbedder) Dimension() int { return 1 } 
+func (n *NoopEmbedder) Dimension() int { return 1 }

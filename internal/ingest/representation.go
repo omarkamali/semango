@@ -9,13 +9,13 @@ import (
 // Representation holds a single piece of content extracted from a document.
 // This aligns with spec.md §4 Data Model.
 type Representation struct {
-	ID       string            `json:"id"`        // Unique ID for this chunk/representation
-	Path     string            `json:"path"`      // Original file path
-	Modality string            `json:"modality"`  // e.g., "text", "image", "pdf_page"
-	Text     string            `json:"text,omitempty"` // Text content, if applicable
-	Vector   []float32         `json:"vector,omitempty"` // Vector embedding
+	ID       string            `json:"id"`                // Unique ID for this chunk/representation
+	Path     string            `json:"path"`              // Original file path
+	Modality string            `json:"modality"`          // e.g., "text", "image", "pdf_page"
+	Text     string            `json:"text,omitempty"`    // Text content, if applicable
+	Vector   []float32         `json:"vector,omitempty"`  // Vector embedding
 	Preview  []byte            `json:"preview,omitempty"` // Thumbnail or preview data
-	Meta     map[string]string `json:"meta,omitempty"`   // Additional metadata
+	Meta     map[string]string `json:"meta,omitempty"`    // Additional metadata
 	// Offset int64 `json:"offset,omitempty"` // Chunk offset, if applicable (for ID calculation)
 }
 
@@ -39,4 +39,4 @@ func ChunkID(path, modality string, offset int64) string {
 // type File struct {
 // 	Path string
 // 	// ... other fields
-// } 
+// }

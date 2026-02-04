@@ -33,4 +33,4 @@ func TestBleveIndex_Basic(t *testing.T) {
 	if err != nil || doc == nil {
 		t.Fatalf("failed to get document: %v", err)
 	}
-} 
+}

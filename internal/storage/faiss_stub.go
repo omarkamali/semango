@@ -4,8 +4,8 @@
 package storage
 
 import (
-    "context"
-    "errors"
+	"context"
+	"errors"
 )
 
 var errFaissUnavailable = errors.New("faiss support requires CGO on linux or darwin")
@@ -14,19 +14,19 @@ var errFaissUnavailable = errors.New("faiss support requires CGO on linux or dar
 type FaissIndex struct{}
 
 func NewFaissIndex(_ context.Context, _ string, _ int, _ int) (*FaissIndex, error) {
-    return nil, errFaissUnavailable
+	return nil, errFaissUnavailable
 }
 
 func (fi *FaissIndex) Add(_ context.Context, _ [][]float32, _ []int64) error {
-    return errFaissUnavailable
+	return errFaissUnavailable
 }
 
 func (fi *FaissIndex) Search(_ context.Context, _ []float32, _ int) ([]float32, []int64, error) {
-    return nil, nil, errFaissUnavailable
+	return nil, nil, errFaissUnavailable
 }
 
 func (fi *FaissIndex) Save(_ context.Context) error {
-    return errFaissUnavailable
+	return errFaissUnavailable
 }
 
 func (fi *FaissIndex) Close(_ context.Context) {}
@@ -39,15 +39,15 @@ func (fi *FaissIndex) Dim() int { return 0 }
 type FaissVectorIndex struct{}
 
 func NewFaissVectorIndex(_ context.Context, _ string, _ int, _ int) (*FaissVectorIndex, error) {
-    return nil, errFaissUnavailable
+	return nil, errFaissUnavailable
 }
 
 func (f *FaissVectorIndex) Upsert(_ context.Context, _ string, _ []float32) error {
-    return errFaissUnavailable
+	return errFaissUnavailable
 }
 
 func (f *FaissVectorIndex) Search(_ context.Context, _ []float32, _ int) ([]VectorResult, error) {
-    return nil, errFaissUnavailable
+	return nil, errFaissUnavailable
 }
 
 func (f *FaissVectorIndex) Dimension() int { return 0 }

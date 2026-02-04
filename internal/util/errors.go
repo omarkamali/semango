@@ -52,7 +52,7 @@ func newSemangoError(originalErr error, message string, attrs ...slog.Attr) *Sem
 		// Prepend message, inherit stack and original error from `se`
 		// Combine attributes
 		combinedAttrs := append(se.Attrs, attrs...) // New attrs take precedence if keys conflict, slog handles this.
-		
+
 		newMessage := message
 		if se.Message != "" {
 			newMessage = fmt.Sprintf("%s: %s", message, se.Message)
@@ -65,7 +65,6 @@ func newSemangoError(originalErr error, message string, attrs ...slog.Attr) *Sem
 			Attrs:       combinedAttrs,
 		}
 	}
-
 
 	return &SemangoError{
 		OriginalErr: originalErr,
@@ -93,7 +92,6 @@ func LogError(logger *slog.Logger, err error) {
 		}
 	}
 
-
 	if se != nil {
 		logAttrs := []any{
 			slog.String("error_message", se.Message),
@@ -102,7 +100,6 @@ func LogError(logger *slog.Logger, err error) {
 			logAttrs = append(logAttrs, slog.String("original_error", se.OriginalErr.Error()))
 		}
 		logAttrs = append(logAttrs, slog.String("stack_trace", se.Stack))
-
 
 		for _, attr := range se.Attrs {
 			logAttrs = append(logAttrs, attr)
@@ -113,4 +110,3 @@ func LogError(logger *slog.Logger, err error) {
 		logger.Error("An error occurred", slog.String("error", err.Error()))
 	}
 }
- 

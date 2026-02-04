@@ -175,14 +175,14 @@ func expandWithDefault(s string) string {
 
 // Load attempts to load configuration from the given path and validates it against the CUE schema.
 func Load(configPath string, cueSchemaPath string) (*Config, error) {
-    // Load environment variables from file if available.
-    // Priority: SEMANGO_ENV_FILE (if set) > .env (if present in working directory)
-    if customEnv := os.Getenv("SEMANGO_ENV_FILE"); customEnv != "" {
-        // Ignore error to keep behavior non-fatal when the file isn't found
-        _ = godotenv.Load(customEnv)
-    } else {
-        _ = godotenv.Load(".env")
-    }
+	// Load environment variables from file if available.
+	// Priority: SEMANGO_ENV_FILE (if set) > .env (if present in working directory)
+	if customEnv := os.Getenv("SEMANGO_ENV_FILE"); customEnv != "" {
+		// Ignore error to keep behavior non-fatal when the file isn't found
+		_ = godotenv.Load(customEnv)
+	} else {
+		_ = godotenv.Load(".env")
+	}
 
 	if configPath == "" {
 		configPath = DefaultConfigPath

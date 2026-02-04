@@ -300,14 +300,6 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int) ([]Result
 	slog.Info("Search completed", "total_results", len(finalResults), "lexical_hits", len(lexicalHits), "vector_hits", len(vecResults))
 	return finalResults, nil
 }
-
-// Helper method to get representation by ID (this would need to be implemented)
-func (s *Searcher) getRepresentationByID(id string) (ingest.Representation, bool) {
-	// TODO: This would need access to the representation store
-	// For now, return empty representation
-	return ingest.Representation{}, false
-}
-
 // createHighlights creates highlight information for lexical matches
 func (s *Searcher) createHighlights(text, query string) map[string]interface{} {
 	highlights := make(map[string]interface{})
@@ -341,19 +333,6 @@ func (s *Searcher) createHighlights(text, query string) map[string]interface{} {
 	}
 
 	return highlights
-}
-
-// combineScores combines lexical and semantic scores based on fusion strategy
-func combineScores(lexicalScore, semanticScore float64, fusion string) float64 {
-	switch fusion {
-	case "rrf": // Reciprocal Rank Fusion
-		// For RRF, we'd need ranks, but for simplicity, use weighted average
-		return lexicalScore + semanticScore
-	case "linear":
-		return lexicalScore + semanticScore
-	default:
-		return lexicalScore + semanticScore
-	}
 }
 
 // GetStats returns real search index statistics

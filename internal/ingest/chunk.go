@@ -10,4 +10,4 @@ type SimpleChunker struct{}
 
 func (s *SimpleChunker) Chunk(text string) []string {
 	return []string{text}
-} 
+}

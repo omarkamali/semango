@@ -268,21 +268,17 @@ func columnKindString(k ColumnKind) string {
 // rand helpers – defer math/rand global usage until needed to keep deterministic tests unless called.
 
 func importMathRandOnce() {
-	if rngInitDone {
-		return
-	}
 	rngInitOnce.Do(func() {
-		rand.Seed(time.Now().UnixNano())
-		rngInitDone = true
+		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	})
 }
 
 var (
 	rngInitOnce sync.Once
-	rngInitDone bool
+	rng         *rand.Rand
 )
 
 func randPerm(n int) []int {
 	importMathRandOnce()
-	return rand.Perm(n)
+	return rng.Perm(n)
 }

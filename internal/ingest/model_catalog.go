@@ -14,8 +14,8 @@ import (
 type ModelInfo struct {
 	ID          string `json:"id"`
 	Alias       string `json:"alias,omitempty"`
-	Size        string `json:"size"`      // S, M, L
-	VRAM        string `json:"vram"`      // Estimated VRAM
+	Size        string `json:"size"` // S, M, L
+	VRAM        string `json:"vram"` // Estimated VRAM
 	Description string `json:"description,omitempty"`
 }
 
