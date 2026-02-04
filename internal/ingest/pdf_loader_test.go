@@ -1,106 +1,146 @@
 package ingest
 
 import (
-	"bytes"
-	"context"
-	"fmt"
-	"os"
-	"strings"
-	"testing"
+"bytes"
+"context"
+"fmt"
+"os"
+"strings"
+"testing"
 )
 
 func TestPDFLoader_Load(t *testing.T) {
-	loader := NewPDFLoader(100, 10)
+loader := NewPDFLoader(100, 10)
 
-	tmpFile, err := os.CreateTemp("", "semango-test-*.pdf")
-	if err != nil {
-		t.Fatalf("failed to create temp pdf: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
+tmpFile, err := os.CreateTemp("", "semango-test-*.pdf")
+if err != nil {
+t.Fatalf("failed to create temp pdf: %v", err)
+}
+defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.Write(buildTestPDF("Dummy PDF file")); err != nil {
-		t.Fatalf("failed to write temp pdf: %v", err)
-	}
-	_ = tmpFile.Close()
+// Test with a 2-page PDF
+pdfData := buildTestPDF([]string{"Page one content", "Page two content"})
+if _, err := tmpFile.Write(pdfData); err != nil {
+t.Fatalf("failed to write temp pdf: %v", err)
+}
+_ = tmpFile.Close()
 
-	reps, err := loader.Load(context.Background(), "test.pdf", tmpFile.Name())
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-
-	if len(reps) == 0 {
-		t.Fatalf("no reps returned")
-	}
-
-	found := false
-	for _, rep := range reps {
-		if strings.Contains(rep.Text, "Dummy PDF file") {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		t.Errorf("expected text 'Dummy PDF file' not found in reps: %+v", reps)
-	}
+reps, err := loader.Load(context.Background(), "test.pdf", tmpFile.Name())
+if err != nil {
+t.Fatalf("Load failed: %v", err)
 }
 
-func buildTestPDF(text string) []byte {
-	var buf bytes.Buffer
-	write := func(s string) { _, _ = buf.WriteString(s) }
+if len(reps) < 2 {
+t.Fatalf("expected at least 2 reps (one per page), got %d", len(reps))
+}
 
-	write("%PDF-1.4\n")
+// Verify metadata and content
+foundPage1 := false
+foundPage2 := false
+for _, rep := range reps {
+if strings.Contains(rep.Text, "Page one content") {
+foundPage1 = true
+if rep.Meta["page"] != "1" {
+t.Errorf("expected page meta '1' for page 1 content, got %s", rep.Meta["page"])
+}
+}
+if strings.Contains(rep.Text, "Page two content") {
+foundPage2 = true
+if rep.Meta["page"] != "2" {
+t.Errorf("expected page meta '2' for page 2 content, got %s", rep.Meta["page"])
+}
+}
+if rep.Meta["ocr_failed"] != "false" {
+t.Errorf("expected ocr_failed='false', got %s", rep.Meta["ocr_failed"])
+}
+}
 
-	offsets := make([]int, 6)
+if !foundPage1 {
+t.Error("Page one content not found")
+}
+if !foundPage2 {
+t.Error("Page two content not found")
+}
+}
 
-	offsets[1] = buf.Len()
-	write("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+// buildTestPDF creates a minimal multi-page PDF for testing.
+func buildTestPDF(pages []string) []byte {
+var buf bytes.Buffer
+write := func(s string) { _, _ = buf.WriteString(s) }
 
-	offsets[2] = buf.Len()
-	write("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+write("%PDF-1.4\n")
 
-	offsets[3] = buf.Len()
-	write("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n")
+// Objects:
+// 1: Catalog
+// 2: Pages (Parent)
+// 3..3+(n-1): Page objects
+// 3+n..3+2n-1: Content streams
+// 3+2n: Font
+n := len(pages)
+offsets := make([]int, 3+2*n+1)
 
-	content := fmt.Sprintf("BT /F1 24 Tf 72 120 Td (%s) Tj ET", text)
-	offsets[4] = buf.Len()
-	write(fmt.Sprintf("4 0 obj\n<< /Length %d >>\nstream\n%s\nendstream\nendobj\n", len(content), content))
+// Catalog
+offsets[1] = buf.Len()
+write("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
 
-	offsets[5] = buf.Len()
-	write("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n")
+// Pages
+kids := ""
+for i := 0; i < n; i++ {
+kids += fmt.Sprintf("%d 0 R ", 3+i)
+}
+offsets[2] = buf.Len()
+write(fmt.Sprintf("2 0 obj\n<< /Type /Pages /Kids [%s] /Count %d >>\nendobj\n", kids, n))
 
-	xrefOffset := buf.Len()
-	write("xref\n0 6\n")
-	write("0000000000 65535 f \n")
-	for i := 1; i <= 5; i++ {
-		write(fmt.Sprintf("%010d 00000 n \n", offsets[i]))
-	}
-	write("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n")
-	write(fmt.Sprintf("%d\n%%%%EOF\n", xrefOffset))
+// Page objects
+for i := 0; i < n; i++ {
+offsets[3+i] = buf.Len()
+write(fmt.Sprintf("%d 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents %d 0 R /Resources << /Font << /F1 %d 0 R >> >> >>\nendobj\n", 3+i, 3+n+i, 3+2*n))
+}
 
-	return buf.Bytes()
+// Content streams
+for i := 0; i < n; i++ {
+content := fmt.Sprintf("BT /F1 12 Tf 72 720 Td (%s) Tj ET", pages[i])
+offsets[3+n+i] = buf.Len()
+write(fmt.Sprintf("%d 0 obj\n<< /Length %d >>\nstream\n%s\nendstream\nendobj\n", 3+n+i, len(content), content))
+}
+
+// Font
+offsets[3+2*n] = buf.Len()
+write(fmt.Sprintf("%d 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n", 3+2*n))
+
+xrefOffset := buf.Len()
+numObjs := 3 + 2*n
+write(fmt.Sprintf("xref\n0 %d\n", numObjs+1))
+write("0000000000 65535 f \n")
+for i := 1; i <= numObjs; i++ {
+write(fmt.Sprintf("%010d 00000 n \n", offsets[i]))
+}
+write(fmt.Sprintf("trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n", numObjs+1))
+write(fmt.Sprintf("%d\n%%%%EOF\n", xrefOffset))
+
+return buf.Bytes()
 }
 
 func TestPDFLoader_Load_FileNotFound(t *testing.T) {
-	loader := NewPDFLoader(100, 10)
-	_, err := loader.Load(context.Background(), "missing.pdf", "/tmp/non-existent-file-123.pdf")
-	if err == nil {
-		t.Error("expected error for missing file, got nil")
-	}
+loader := NewPDFLoader(100, 10)
+_, err := loader.Load(context.Background(), "missing.pdf", "/tmp/non-existent-file-123.pdf")
+if err == nil {
+t.Error("expected error for missing file, got nil")
+}
 }
 
 func TestPDFLoader_Load_InvalidFile(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "*.pdf")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.WriteString("not a pdf")
-	tmpFile.Close()
+tmpFile, err := os.CreateTemp("", "*.pdf")
+if err != nil {
+t.Fatalf("failed to create temp file: %v", err)
+}
+defer os.Remove(tmpFile.Name())
+_, _ = tmpFile.WriteString("not a pdf")
+_ = tmpFile.Close()
 
-	loader := NewPDFLoader(100, 10)
-	_, err = loader.Load(context.Background(), "invalid.pdf", tmpFile.Name())
-	if err == nil {
-		t.Error("expected error for invalid pdf, got nil")
-	}
+loader := NewPDFLoader(100, 10)
+_, err = loader.Load(context.Background(), "invalid.pdf", tmpFile.Name())
+if err == nil {
+t.Error("expected error for invalid pdf, got nil")
+}
 }

@@ -52,10 +52,7 @@ func Crawl(cfg config.FilesConfig, filePathChan chan<- string, errChan chan<- er
 			}
 			// Check if this directory should be excluded
 			for _, excludePattern := range cfg.Exclude {
-				patternToCheck := excludePattern
-				if strings.HasSuffix(patternToCheck, "/**") {
-					patternToCheck = strings.TrimSuffix(patternToCheck, "/**")
-				}
+				patternToCheck := strings.TrimSuffix(excludePattern, "/**")
 				if matched, _ := doublestar.Match(patternToCheck, normalizedPath); matched {
 					if excludePattern == patternToCheck || strings.HasSuffix(excludePattern, "/**") {
 						slog.Debug("Excluding directory due to pattern", "dir_path", normalizedPath, "pattern", excludePattern)

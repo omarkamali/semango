@@ -315,24 +315,6 @@ var searchCmd = &cobra.Command{
 	},
 }
 
-// Helper function to check if a string is in a slice
-func stringInSlice(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
-}
-
-// Helper function to truncate strings for logging
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
-}
-
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
@@ -354,6 +336,8 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(installCmd)
+	rootCmd.AddCommand(modelsCmd)
 	initCmd.Flags().StringP("file", "f", config.DefaultConfigPath, "Path to write the configuration file")
 	rootCmd.PersistentFlags().StringP("config", "c", config.DefaultConfigPath, "Path to the configuration file")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose logging")

@@ -412,7 +412,7 @@ func (le *LocalEmbedder) detectOutputName(modelDir string) (string, error) {
 
 		// Try to run a small inference to validate the output name actually works
 		err = le.testInferenceWithSession(dynamicSession, outputName)
-		dynamicSession.Destroy()
+		_ = dynamicSession.Destroy()
 
 		if err == nil {
 			fmt.Printf("DEBUG detectOutputName: SUCCESS with output name: %s\n", outputName)
@@ -446,19 +446,19 @@ func (le *LocalEmbedder) testInferenceWithSession(session *onnxruntime_go.Dynami
 	if err != nil {
 		return fmt.Errorf("failed to create input_ids tensor: %w", err)
 	}
-	defer inputIDsTensor.Destroy()
+	defer func() { _ = inputIDsTensor.Destroy() }()
 
 	attentionMasksTensor, err := onnxruntime_go.NewTensor(inputShape, flatAttentionMasks)
 	if err != nil {
 		return fmt.Errorf("failed to create attention_mask tensor: %w", err)
 	}
-	defer attentionMasksTensor.Destroy()
+	defer func() { _ = attentionMasksTensor.Destroy() }()
 
 	tokenTypeIDsTensor, err := onnxruntime_go.NewTensor(inputShape, flatTokenTypeIDs)
 	if err != nil {
 		return fmt.Errorf("failed to create token_type_ids tensor: %w", err)
 	}
-	defer tokenTypeIDsTensor.Destroy()
+	defer func() { _ = tokenTypeIDsTensor.Destroy() }()
 
 	// Create output tensor based on output type
 	var outputTensor *onnxruntime_go.Tensor[float32]
@@ -474,7 +474,7 @@ func (le *LocalEmbedder) testInferenceWithSession(session *onnxruntime_go.Dynami
 	if err != nil {
 		return fmt.Errorf("failed to create output tensor: %w", err)
 	}
-	defer outputTensor.Destroy()
+	defer func() { _ = outputTensor.Destroy() }()
 
 	// Try to run inference
 	err = session.Run(
@@ -514,7 +514,7 @@ func (le *LocalEmbedder) initONNXSession(modelDir string) (*onnxruntime_go.Advan
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session options: %w", err)
 	}
-	defer options.Destroy()
+	defer func() { _ = options.Destroy() }()
 
 	// Create dummy input and output tensors for session initialization
 	// We'll use dynamic session later for actual inference
@@ -525,13 +525,13 @@ func (le *LocalEmbedder) initONNXSession(modelDir string) (*onnxruntime_go.Advan
 	if err != nil {
 		return nil, fmt.Errorf("failed to create input tensor: %w", err)
 	}
-	defer inputTensor.Destroy()
+	defer func() { _ = inputTensor.Destroy() }()
 
 	outputTensor, err := onnxruntime_go.NewEmptyTensor[float32](outputShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output tensor: %w", err)
 	}
-	defer outputTensor.Destroy()
+	defer func() { _ = outputTensor.Destroy() }()
 
 	// Create session
 	session, err := onnxruntime_go.NewAdvancedSession(
@@ -714,19 +714,19 @@ func (le *LocalEmbedder) runInference(inputIDs, attentionMasks [][]int64) ([][][
 	if err != nil {
 		return nil, fmt.Errorf("failed to create input_ids tensor: %w", err)
 	}
-	defer inputIDsTensor.Destroy()
+	defer func() { _ = inputIDsTensor.Destroy() }()
 
 	attentionMasksTensor, err := onnxruntime_go.NewTensor(inputShape, flatAttentionMasks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create attention_mask tensor: %w", err)
 	}
-	defer attentionMasksTensor.Destroy()
+	defer func() { _ = attentionMasksTensor.Destroy() }()
 
 	tokenTypeIDsTensor, err := onnxruntime_go.NewTensor(inputShape, flatTokenTypeIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token_type_ids tensor: %w", err)
 	}
-	defer tokenTypeIDsTensor.Destroy()
+	defer func() { _ = tokenTypeIDsTensor.Destroy() }()
 
 	// Create dynamic session using the detected output name
 	modelPath := le.modelPath + "/model.onnx"
@@ -741,7 +741,7 @@ func (le *LocalEmbedder) runInference(inputIDs, attentionMasks [][]int64) ([][][
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dynamic session: %w", err)
 	}
-	defer dynamicSession.Destroy()
+	defer func() { _ = dynamicSession.Destroy() }()
 
 	// Create output tensor based on output type
 	var outputTensor *onnxruntime_go.Tensor[float32]
@@ -757,7 +757,7 @@ func (le *LocalEmbedder) runInference(inputIDs, attentionMasks [][]int64) ([][][
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output tensor: %w", err)
 	}
-	defer outputTensor.Destroy()
+	defer func() { _ = outputTensor.Destroy() }()
 
 	// Run inference
 	err = dynamicSession.Run(
@@ -919,7 +919,7 @@ func (le *LocalEmbedder) Dimension() int {
 // Close cleans up resources.
 func (le *LocalEmbedder) Close() error {
 	if le.session != nil {
-		le.session.Destroy()
+		_ = le.session.Destroy()
 	}
 	return nil
 }

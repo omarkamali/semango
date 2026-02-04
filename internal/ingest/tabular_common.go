@@ -14,7 +14,7 @@ type ColumnKind string
 
 const (
 	TextKind  ColumnKind = "text"
-	OtherKind            = "other"
+	OtherKind ColumnKind = "other"
 )
 
 // BuildRepresentationForRow converts a single table row (already converted to

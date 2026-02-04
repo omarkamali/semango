@@ -68,3 +68,5 @@ tmp/
 # Local development
 .devcontainer/
 *.local.yml 
+
+faiss
