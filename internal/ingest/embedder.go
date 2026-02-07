@@ -8,7 +8,7 @@ import (
 	"github.com/omarkamali/semango/internal/config"
 )
 
-// Embedder defines the interface for embedding providers (OpenAI, Cohere, etc.)
+// Embedder defines the interface for embedding providers (OpenAI, local, etc.)
 type Embedder interface {
 	Embed(ctx context.Context, texts []string) ([][]float32, error)
 	Dimension() int
@@ -19,12 +19,31 @@ func NewEmbedderFromConfig(cfg config.EmbeddingConfig) (Embedder, error) {
 	prov := cfg.Provider
 	switch prov {
 	case "openai", "": // default to openai
-		apiKey := os.Getenv("OPENAI_API_KEY")
+		apiKey := cfg.APIKey
 		if apiKey == "" {
-			return nil, fmt.Errorf("OpenAI API key is required but not found in OPENAI_API_KEY environment variable")
+			envVar := cfg.APIKeyEnv
+			if envVar == "" {
+				envVar = "OPENAI_API_KEY"
+			}
+			apiKey = os.Getenv(envVar)
 		}
+
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key is required for openai embedder provider (set api_key, api_key_env, or OPENAI_API_KEY)")
+		}
+
+		baseURL := cfg.BaseURL
+		if baseURL == "" {
+			envVar := cfg.BaseURLEnv
+			if envVar == "" {
+				envVar = "OPENAI_BASE_URL"
+			}
+			baseURL = os.Getenv(envVar)
+		}
+
 		openCfg := OpenAIConfig{
 			APIKey:     apiKey,
+			BaseURL:    baseURL,
 			Model:      cfg.Model,
 			BatchSize:  cfg.BatchSize,
 			Concurrent: cfg.Concurrent,

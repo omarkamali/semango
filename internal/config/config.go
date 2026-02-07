@@ -42,6 +42,10 @@ type EmbeddingConfig struct {
 	Concurrent     int    `json:"concurrent" yaml:"concurrent" cue:"concurrent"`
 	ModelCacheDir  string `json:"model_cache_dir" yaml:"model_cache_dir" cue:"model_cache_dir"`
 	OnnxOutputName string `json:"onnx_output_name" yaml:"onnx_output_name" cue:"onnx_output_name"`
+	APIKey         string `json:"api_key" yaml:"api_key" cue:"api_key"`
+	APIKeyEnv      string `json:"api_key_env" yaml:"api_key_env" cue:"api_key_env"`
+	BaseURL        string `json:"base_url" yaml:"base_url" cue:"base_url"`
+	BaseURLEnv     string `json:"base_url_env" yaml:"base_url_env" cue:"base_url_env"`
 }
 
 // LexicalConfig matches the 'lexical' section of semango.yml
@@ -59,6 +63,10 @@ type RerankerConfig struct {
 	Model              string `json:"model" yaml:"model" cue:"model"`
 	BatchSize          int    `json:"batch_size" yaml:"batch_size" cue:"batch_size"`
 	PerRequestOverride bool   `json:"per_request_override" yaml:"per_request_override" cue:"per_request_override"`
+	APIKey             string `json:"api_key" yaml:"api_key" cue:"api_key"`
+	APIKeyEnv          string `json:"api_key_env" yaml:"api_key_env" cue:"api_key_env"`
+	BaseURL            string `json:"base_url" yaml:"base_url" cue:"base_url"`
+	BaseURLEnv     string `json:"base_url_env" yaml:"base_url_env" cue:"base_url_env"`
 }
 
 // HybridConfig matches the 'hybrid' section of semango.yml
@@ -291,7 +299,7 @@ func GetDefaultConfig() *Config {
 		},
 		Reranker: RerankerConfig{
 			Enabled:            false,
-			Provider:           "cohere",
+			Provider:           "openai",
 			Model:              "rerank-english-v3.0",
 			BatchSize:          32,
 			PerRequestOverride: true,
@@ -341,14 +349,19 @@ const DefaultConfigYAML = `# Semango configuration file
 
 # Embedding settings
 embedding:
-  # Provider for embeddings: local, openai, cohere, voyage
+  # Provider for embeddings: local, openai
   provider: local
-	# Model name for the selected provider (Hugging Face ID for local provider)
-	model: onnx-models/bge-small-en-v1.5-onnx
+  # Model name for the selected provider (Hugging Face ID for local provider)
+  model: onnx-models/bge-small-en-v1.5-onnx
   batch_size: 48
   concurrent: 4
   # Directory where models are cached
   model_cache_dir: "${SEMANGO_MODEL_DIR:=~/.cache/semango}"
+  # For openai provider:
+  # api_key: "your-api-key"
+  # api_key_env: "OPENAI_API_KEY"
+  # base_url: "https://api.openai.com/v1"
+  # base_url_env: "OPENAI_BASE_URL"
 
 # Lexical search settings (BM25)
 lexical:
@@ -360,10 +373,15 @@ lexical:
 # Reranker settings
 reranker:
   enabled: false
-  provider: cohere
+  provider: openai
   model: rerank-english-v3.0
   batch_size: 32
   per_request_override: true
+  # For openai provider:
+  # api_key: "your-api-key"
+  # api_key_env: "OPENAI_API_KEY"
+  # base_url: "https://api.openai.com/v1"
+  # base_url_env: "OPENAI_BASE_URL"
 
 # Hybrid search merging settings
 hybrid:

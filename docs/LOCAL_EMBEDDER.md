@@ -49,10 +49,12 @@ embedding:
 embedding:
   provider: "local"
   model: "BAAI/bge-base-en-v1.5"
-  model_cache_dir: "~/.cache/semango/models"  # Where to store downloaded models
+  model_cache_dir: "~/.cache/semango"          # Where to store downloaded models
   batch_size: 16                              # Adjust based on your memory
   max_length: 512                             # Maximum token length
 ```
+
+You can also set the model cache directory using the `SEMANGO_MODEL_DIR` environment variable, which is the default location Semango looks for if `model_cache_dir` is not explicitly set in the config.
 
 ### Using Local Model Files
 
@@ -145,7 +147,7 @@ files:
 embedding:
   provider: "local"
   model: "BAAI/bge-base-en-v1.5"
-  model_cache_dir: "~/.cache/semango/models"
+  model_cache_dir: "~/.cache/semango"
   batch_size: 16
 
 search:

@@ -204,6 +204,15 @@ func (le *LocalEmbedder) resolveModelLocation(modelRef, cacheDir string) (string
 		}
 	}
 
+	// Legacy directory check (underscore instead of slashes)
+	legacyModelDir := filepath.Join(cacheDir, strings.ReplaceAll(modelRef, "/", "_"))
+	if info, err := os.Stat(legacyModelDir); err == nil && info.IsDir() {
+		onnxPath, err := findOnnxFileInDir(legacyModelDir)
+		if err == nil {
+			return legacyModelDir, onnxPath, nil
+		}
+	}
+
 	repoFiles, err := listHuggingFaceRepoFiles(modelRef)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to query Hugging Face repo: %w", err)

@@ -114,7 +114,7 @@ This roadmap breaks down the implementation of Semango into logical phases, prio
 
 4. **Reranker Integration** (P2)
    - Reranker interface implementation
-   - Cohere and local reranker support
+   - Remote and local reranker support
    - Results post-processing
 
 5. **gRPC & MCP Support** (P1)
@@ -145,7 +145,7 @@ This roadmap breaks down the implementation of Semango into logical phases, prio
    - Results display with highlighting
 
 2. **Additional Embedding Providers** (P1)
-   - Cohere integration
+   - Unified OpenAI-compatible cloud integration
    - Voyage integration
    - Local llama.cpp provider
 

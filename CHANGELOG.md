@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Unified Model Configuration**: Merged `local_model_path` into the `model` property for both `embedding` and `reranker`.
+- **Hugging Face Mirroring**: Local model downloads now preserve their repository directory structure (e.g., `author/repo/`) and can automatically pull from Huggingface.
+- **Provider Simplification**: Standardized on `openai` and `local` providers. Removed legacy `cohere` and `voyage` providers in favor of OpenAI-compatible endpoints.
+- **Flexible Environment Variables**: Added `api_key_env` and `base_url_env` to customize which environment variables are used for API secrets and endpoints (defaults to `OPENAI_API_KEY` and `OPENAI_BASE_URL`).
+
 ### Added
 - Initial public release preparation
 - GitHub Actions CI/CD workflows

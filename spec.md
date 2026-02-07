@@ -68,7 +68,7 @@ Expected output snippet:
 \| Vector lib | **FAISS 1.8.0** | state‑of‑practice ANN; mature GPU kernels | compiled with `IO_FLAG_MMAP` to keep RAM footprint ≤1.2× raw vectors |
 \| BM25 | **Bleve 2.4** | full‑text search, streaming scorers | Scorch backend + nightly zap merge lowers disk 35 % |
 \| gRPC & REST | **buf + grpc‑gateway** | single proto source, dual surface | Implements MCP v0.3; auto‑generated OpenAPI 3.1 |
-\| Embeddings | **OpenAI, Cohere, Voyage, llama.cpp, CLIP** | best recall + offline fallback | uniform adapter interface (see §5) |
+\| Embeddings | **OpenAI, local (ONNX)** | best recall + offline fallback | uniform adapter interface (see §5) |
 \| OCR | **gosseract 2.5** | wrapper over Tesseract 5.x | auto‑detects scanned PDF vs born‑digital |
 \| Audio STT | **whisper.cpp 1.7** | small CPU model; MIT licence | supports WAV & FLAC ≤ 30 min via sliding window |
 \| UI toolkit | **React 18 / Vite / Tailwind / shadcn/ui** | fast builds, utility styles | shipped as embedded gzip assets via `go:embed` |
@@ -115,12 +115,16 @@ Below is the canonical generated file annotated with **defaults** and allowed en
 
 ```yaml
 embedding:
-  provider: local         # enum: openai|cohere|voyage|local
+  provider: local         # enum: openai|local
   model: "onnx-models/all-MiniLM-L6-v2-onnx"
   onnx_output_name: "pooling_layer_name"  # optional
   batch_size: 48           # 1–512 safe; perf ~linear until 128
   concurrent: 4            # simultaneous embed calls (goroutines)
   model_cache_dir: "${SEMANGO_MODEL_DIR:=~/.cache/semango}" # auto‑download path
+  api_key: "..."           # optional hardcoded key
+  api_key_env: "OPENAI_API_KEY" # optional, env var to look for API key
+  base_url: "..."          # optional hardcoded URL
+  base_url_env: "OPENAI_BASE_URL" # optional, env var to look for Base URL
 lexical:
   enabled: true            # disable if only vector search wanted
   index_path: ./semango/index/bleve
@@ -128,10 +132,14 @@ lexical:
   bm25_b: 0.75             # scorer constant
 reranker:
   enabled: false
-  provider: cohere         # openai|cohere|local
+  provider: openai         # openai|local
   model: rerank-english-v3.0
   batch_size: 32           # reranker parallelism
   per_request_override: true
+  api_key: "..."           # optional hardcoded key
+  api_key_env: "OPENAI_API_KEY" # optional, env var to look for API key
+  base_url: "..."          # optional hardcoded URL
+  base_url_env: "OPENAI_BASE_URL" # optional, env var to look for Base URL
 hybrid:
   vector_weight: 0.7       # 0.0–1.0
   lexical_weight: 0.3
@@ -220,7 +228,7 @@ type Embedder interface {
 }
 ```
 
-Adapters available: `openai`, `cohere`, `voyage`, `local` (llama.cpp via CGO), and `clip` (images; vector dim = 512).
+Adapters available: `openai`, `local` (ONNX via ONNXRuntime), and `clip` (images; vector dim = 512).
 
 ### 5.3 Cross‑Encoder Reranker Interface
 
@@ -272,7 +280,7 @@ graph TD
     I --> J["Bleve Index Update"]
     
     H -- "content for embedding" --> K["Embedding Provider Chooser"]
-    K -- "text chunks / image data / audio features" --> L["Embedder (OpenAI, Cohere, local, CLIP, etc.)"]
+    K -- "text chunks / image data / audio features" --> L["Embedder (OpenAI, local, CLIP, etc.)"]
     L --> M["Vector Representations"]
     M --> N["FAISS Index Update"]
 

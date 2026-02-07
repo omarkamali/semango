@@ -76,6 +76,7 @@ Semango uses `semango.yml` for configuration. Key options:
 embedding:
   provider: openai          # or "local" for ONNX models
   model: text-embedding-3-large
+  # Optional: base_url, api_key, api_key_env, base_url_env
   
 lexical:
   enabled: true
@@ -106,12 +107,15 @@ See [docs/SEMANGO_GUIDE.md](docs/SEMANGO_GUIDE.md) for the complete configuratio
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `SEMANGO_TOKENS` | Comma-separated list of valid API tokens |
-| `OPENAI_API_KEY` | OpenAI API key (when using `provider: openai`) |
-| `SEMANGO_ENV_FILE` | Path to `.env` file to load |
-| `SEMANGO_MODEL_DIR` | Cache directory for local models |
+| Variable | Description | Default / Optional |
+|----------|-------------|--------------------|
+| `SEMANGO_TOKENS` | Comma-separated list of valid API tokens | Required for API auth |
+| `OPENAI_API_KEY` | API key to use when `provider: openai` | Used if `api_key` or `api_key_env` not set |
+| `OPENAI_BASE_URL` | Base URL for OpenAI-compatible APIs | Defaults to OpenAI official endpoint |
+| `SEMANGO_ENV_FILE` | Path to `.env` file to load | Defaults to `.env` |
+| `SEMANGO_MODEL_DIR` | Cache directory for local ONNX models | Defaults to `~/.cache/semango` |
+
+You can also customize which environment variables Semango looks for by setting `api_key_env` or `base_url_env` in your `semango.yml`.
 
 ## Documentation
 

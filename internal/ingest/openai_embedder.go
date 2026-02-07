@@ -26,12 +26,12 @@ type OpenAIEmbedder struct {
 
 // OpenAIConfig holds configuration for the OpenAI embedder.
 type OpenAIConfig struct {
-	APIKey     string  // Usually from OPENAI_API_KEY env var
+	APIKey     string  // API key (defaults to OPENAI_API_KEY env var)
 	Model      string  // e.g., "text-embedding-3-large"
 	BatchSize  int     // Number of texts to embed in a single API call
 	Concurrent int     // Number of concurrent API calls
 	RateLimit  float64 // Requests per second limit
-	BaseURL    string  // Optional OpenAI API base URL override (e.g. for local endpoints)
+	BaseURL    string  // API base URL override (defaults to OPENAI_BASE_URL env var)
 }
 
 // NewOpenAIEmbedder creates a new OpenAI embedding provider.

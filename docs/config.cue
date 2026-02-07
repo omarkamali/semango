@@ -17,12 +17,16 @@ package config
 }
 
 #EmbeddingConfig: {
-	provider:         string | *"local" | "openai" | "cohere" | "voyage" // Default: local
+	provider:         string | *"local" | "openai" // Default: local
 	model:            string // Example: text-embedding-3-large (or Hugging Face ID for local)
 	batch_size:       int & >=1 & <=512 | *48 // Default: 48
 	concurrent:       int & >=1 | *4          // Default: 4
 	model_cache_dir:  string | *"~/.cache/semango" // Default added to satisfy concreteness
 	onnx_output_name?: string // Optional
+	api_key?:         string
+	api_key_env?:     string
+	base_url?:        string
+	base_url_env?:    string
 }
 
 #LexicalConfig: {
@@ -34,10 +38,14 @@ package config
 
 #RerankerConfig: {
 	enabled:              bool   | *false                // Default: false
-	provider:             string | *"cohere" | "openai" | "local" // Default: cohere
+	provider:             string | *"openai" | "local"  // Default: local
 	model:                string | *"rerank-english-v3.0" // Default: rerank-english-v3.0
 	batch_size:           int & >=1 | *32                  // Default: 32
 	per_request_override: bool   | *true                // Default: true
+	api_key?:             string
+	api_key_env?:         string
+	base_url?:            string
+	base_url_env?:        string
 }
 
 #HybridConfig: {

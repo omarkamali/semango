@@ -2,7 +2,7 @@
 
 # Embedding settings
 embedding:
-  # Provider for embeddings: local, openai, cohere, voyage
+  # Provider for embeddings: local, openai
   provider: local
   # Model name for the selected provider (Hugging Face ID or direct path for local provider)
   model: onnx-models/all-MiniLM-L6-v2-onnx
@@ -11,6 +11,11 @@ embedding:
   concurrent: 4
   # Directory where models are cached
   model_cache_dir: "${SEMANGO_MODEL_DIR:=~/.cache/semango}"
+  # For openai provider:
+  # api_key: "your-api-key"
+  # api_key_env: "OPENAI_API_KEY"
+  # base_url: "https://api.openai.com/v1"
+  # base_url_env: "OPENAI_BASE_URL"
 
 # Lexical search settings (BM25)
 lexical:
@@ -22,10 +27,15 @@ lexical:
 # Reranker settings
 reranker:
   enabled: false
-  provider: cohere
+  provider: openai
   model: rerank-english-v3.0
   batch_size: 32
   per_request_override: true
+  # For openai provider:
+  # api_key: "your-api-key"
+  # api_key_env: "OPENAI_API_KEY"
+  # base_url: "https://api.openai.com/v1"
+  # base_url_env: "OPENAI_BASE_URL"
 
 # Hybrid search merging settings
 hybrid:

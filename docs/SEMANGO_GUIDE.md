@@ -106,26 +106,33 @@ curl -s -H "Authorization: Bearer devtoken123" \
 
 Semango validates config against a CUE schema (see `docs/config.cue`). Top-level keys:
 
-- `embedding` (provider, model, batch_size, concurrent, model_cache_dir)
-  - provider: "local" | "openai" | "cohere" | "voyage"
-  - model: string (required for hosted providers)
-  - model: path or Hugging Face ID for local models
-  - batch_size: int (1..512), default 48
-  - concurrent: int (>=1), default 4
-  - model_cache_dir: path (supports env/default expansion)
+- `embedding` (provider, model, batch_size, concurrent, model_cache_dir, api_key, api_key_env, base_url, base_url_env)
+  - `provider`: `"local"` | `"openai"`. Default: `"local"`.
+  - `model`: Model name or ID. Required for both providers. For `local`, can be a path or Hugging Face ID.
+  - `batch_size`: int (1..512), default `48`.
+  - `concurrent`: int (>=1), default `4`.
+  - `model_cache_dir`: Path for local model downloads. Default: `~/.cache/semango`.
+  - `api_key`: Hardcoded API key (Optional).
+  - `api_key_env`: Env var name for the API key. Default: `OPENAI_API_KEY`.
+  - `base_url`: Hardcoded Base URL (Optional, e.g., for Ollama).
+  - `base_url_env`: Env var name for the Base URL. Default: `OPENAI_BASE_URL`.
 
 - `lexical` (BM25 & index path)
-  - enabled: bool, default true
-  - index_path: path for Bleve index
-  - bm25_k1: float, default 1.2
-  - bm25_b: float, default 0.75
+  - `enabled`: bool, default `true`.
+  - `index_path`: Path for Bleve index, default `./semango/index/bleve`.
+  - `bm25_k1`: Scorer constant, default `1.2`.
+  - `bm25_b`: Scorer constant, default `0.75`.
 
 - `reranker`
-  - enabled: bool, default false
-  - provider: "cohere" | "openai" | "local" (default cohere)
-  - model: string (default rerank-english-v3.0)
-  - batch_size: int (>=1), default 32
-  - per_request_override: bool, default true
+  - `enabled`: bool, default `false`.
+  - `provider`: `"openai"` | `"local"`. Default: `"openai"`.
+  - `model`: Reranker model ID, default `rerank-english-v3.0`.
+  - `batch_size`: int (>=1), default `32`.
+  - `per_request_override`: Allow SDK callers to override model per request. Default: `true`.
+  - `api_key`: Hardcoded API key (Optional).
+  - `api_key_env`: Env var name for the API key. Default: `OPENAI_API_KEY`.
+  - `base_url`: Hardcoded Base URL (Optional).
+  - `base_url_env`: Env var name for the Base URL. Default: `OPENAI_BASE_URL`.
 
 - `hybrid`
   - vector_weight: 0.0..1.0, default 0.7
@@ -404,8 +411,8 @@ lexical:
   bm25_k1: 1.2
   bm25_b: 0.75
 reranker:
-  enabled: true
-  provider: cohere
+  enabled: false
+  provider: openai
   model: rerank-english-v3.0
   batch_size: 32
   per_request_override: true
