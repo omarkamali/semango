@@ -22,7 +22,7 @@ Refer to supporting docs:
 ```yaml
 embedding:
   provider: local
-  local_model_path: "onnx-models/all-MiniLM-L6-v2-onnx"
+  model: "onnx-models/all-MiniLM-L6-v2-onnx"
   batch_size: 48
   concurrent: 4
   model_cache_dir: ${SEMANGO_MODEL_DIR:=~/.cache/semango}
@@ -106,10 +106,10 @@ curl -s -H "Authorization: Bearer devtoken123" \
 
 Semango validates config against a CUE schema (see `docs/config.cue`). Top-level keys:
 
-- `embedding` (provider, model, local_model_path, batch_size, concurrent, model_cache_dir)
+- `embedding` (provider, model, batch_size, concurrent, model_cache_dir)
   - provider: "local" | "openai" | "cohere" | "voyage"
   - model: string (required for hosted providers)
-  - local_model_path: path for local models
+  - model: path or Hugging Face ID for local models
   - batch_size: int (1..512), default 48
   - concurrent: int (>=1), default 4
   - model_cache_dir: path (supports env/default expansion)
@@ -382,7 +382,7 @@ For UI tests, add your preferred JS test runner (e.g., Vitest/Jest) in `ui/` and
   - Ensure `export SEMANGO_TOKENS="token1,token2"` is set in the environment before running the server.
 
 - Local model not found
-  - Check `embedding.local_model_path` and that the path exists; see `docs/LOCAL_EMBEDDER.md` for supported models.
+  - Check `embedding.model` and that the path exists; see `docs/LOCAL_EMBEDDER.md` for supported models.
 
 - Slow indexing
   - Increase `embedding.batch_size` carefully; check disk IO and CPU utilization.
@@ -394,7 +394,7 @@ For UI tests, add your preferred JS test runner (e.g., Vitest/Jest) in `ui/` and
 ```yaml
 embedding:
   provider: local
-  local_model_path: "onnx-models/all-MiniLM-L6-v2-onnx"
+  model: "onnx-models/all-MiniLM-L6-v2-onnx"
   batch_size: 64
   concurrent: 4
   model_cache_dir: ${SEMANGO_MODEL_DIR:=~/.cache/semango}

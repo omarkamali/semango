@@ -1,50 +1,49 @@
 package config
 
-// This file duplicates docs/config.cue so that it can be embedded into the
-// binary without using relative ".." paths which are disallowed by go:embed.
-// Keep the contents in sync with docs/config.cue.
+// Note: This CUE schema is based on the semango.yml structure from spec.md.
+// It defines types and constraints for configuration validation.
 
 #Config: {
 	embedding: #EmbeddingConfig
 	lexical:   #LexicalConfig
-	reranker:   #RerankerConfig
+	reranker:  #RerankerConfig
 	hybrid:    #HybridConfig
 	files:     #FilesConfig
 	server:    #ServerConfig
-	plugins?:  [...string]
+	plugins?:  [...string] // Optional, list of strings
 	ui:        #UIConfig
 	mcp:       #MCPConfig
 	tabular:   #TabularConfig
 }
 
 #EmbeddingConfig: {
-	provider:         string | *"local" | "openai" | "cohere" | "voyage"
-	model:            string
-	local_model_path: string | *"onnx-models/bge-small-en-v1.5-onnx"
-	batch_size:       int & >=1 & <=512 | *48
-	concurrent:       int & >=1 | *4
-	model_cache_dir:  string
+	provider:         string | *"local" | "openai" | "cohere" | "voyage" // Default: local
+	model:            string // Example: text-embedding-3-large
+	batch_size:       int & >=1 & <=512 | *48 // Default: 48
+	concurrent:       int & >=1 | *4          // Default: 4
+	model_cache_dir:  string | *"~/.cache/semango" // Default added to satisfy concreteness
+	onnx_output_name?: string // Optional
 }
 
 #LexicalConfig: {
 	enabled:    bool | *true
-	index_path: string
-	bm25_k1:    float  | *1.2
-	bm25_b:     float  | *0.75
+	index_path: string | *"./semango/index/bleve" // Default added
+	bm25_k1:    float  | *1.2                      // Default: 1.2
+	bm25_b:     float  | *0.75                     // Default: 0.75
 }
 
 #RerankerConfig: {
-	enabled:              bool   | *false
-	provider:             string | *"cohere" | "openai" | "local"
-	model:                string | *"rerank-english-v3.0"
-	batch_size:           int & >=1 | *32
-	per_request_override: bool   | *true
+	enabled:              bool   | *false                // Default: false
+	provider:             string | *"cohere" | "openai" | "local" // Default: cohere
+	model:                string | *"rerank-english-v3.0" // Default: rerank-english-v3.0
+	batch_size:           int & >=1 | *32                  // Default: 32
+	per_request_override: bool   | *true                // Default: true
 }
 
 #HybridConfig: {
-	vector_weight:  float & >=0.0 & <=1.0 | *0.7
-	lexical_weight: float & >=0.0 & <=1.0 | *0.3
-	fusion:         string | *"linear" | "rrf"
+	vector_weight:  float & >=0.0 & <=1.0 | *0.7 // Default: 0.7
+	lexical_weight: float & >=0.0 & <=1.0 | *0.3 // Default: 0.3
+	fusion:         string | *"linear" | "rrf"   // Default: linear
 }
 
 #FilesConfig: {
@@ -55,16 +54,16 @@ package config
 }
 
 #ServerConfig: {
-	host: string | *"0.0.0.0"
-	port: int & >0 & <65536 | *8181
+	host: string | *"0.0.0.0" // Default: 0.0.0.0
+	port: int & >0 & <65536 | *8181 // Default: 8181
 	auth: #AuthConfig
-	tls_cert?: string
-	tls_key?: string
+	tls_cert?: string // Optional
+	tls_key?: string  // Optional, added based on common practice
 }
 
 #AuthConfig: {
-	type:      string | *"token"
-	token_env: string | *"SEMANGO_TOKENS"
+	type:      string | *"token"          // Default: token
+	token_env: string | *"SEMANGO_TOKENS" // Default: SEMANGO_TOKENS
 }
 
 #UIConfig: {
@@ -79,5 +78,5 @@ package config
 	max_rows_embedded: int & >=1 | *50000
 	sampling:          string | *"random" | "stratified"
 	min_text_tokens:   int & >=1 | *5
-	delimiter?:        string | *","  // for CSV/TSV; "\t" for TSV
+	delimiter?:        string | *","  // CSV delimiter; "\t" for TSV
 } 

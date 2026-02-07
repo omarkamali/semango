@@ -22,92 +22,91 @@ import (
 // Initially, we'll define a placeholder structure. We'll populate this
 // based on spec.md as we implement features.
 type Config struct {
-	Embedding EmbeddingConfig `yaml:"embedding"`
-	Lexical   LexicalConfig   `yaml:"lexical"`
-	Reranker  RerankerConfig  `yaml:"reranker"`
-	Hybrid    HybridConfig    `yaml:"hybrid"`
-	Files     FilesConfig     `yaml:"files"`
-	Server    ServerConfig    `yaml:"server"`
-	Plugins   []string        `yaml:"plugins"`
-	UI        UIConfig        `yaml:"ui"`
-	MCP       MCPConfig       `yaml:"mcp"`
-	Tabular   TabularConfig   `yaml:"tabular"`
+	Embedding EmbeddingConfig `json:"embedding" yaml:"embedding"`
+	Lexical   LexicalConfig   `json:"lexical" yaml:"lexical"`
+	Reranker  RerankerConfig  `json:"reranker" yaml:"reranker"`
+	Hybrid    HybridConfig    `json:"hybrid" yaml:"hybrid"`
+	Files     FilesConfig     `json:"files" yaml:"files"`
+	Server    ServerConfig    `json:"server" yaml:"server"`
+	Plugins   []string        `json:"plugins" yaml:"plugins"`
+	UI        UIConfig        `json:"ui" yaml:"ui"`
+	MCP       MCPConfig       `json:"mcp" yaml:"mcp"`
+	Tabular   TabularConfig   `json:"tabular" yaml:"tabular"`
 }
 
 // EmbeddingConfig matches the 'embedding' section of semango.yml
 type EmbeddingConfig struct {
-	Provider       string `yaml:"provider" cue:"provider"`
-	Model          string `yaml:"model" cue:"model"`
-	LocalModelPath string `yaml:"local_model_path" cue:"local_model_path"`
-	BatchSize      int    `yaml:"batch_size" cue:"batch_size"`
-	Concurrent     int    `yaml:"concurrent" cue:"concurrent"`
-	ModelCacheDir  string `yaml:"model_cache_dir" cue:"model_cache_dir"`
-	OnnxOutputName string `yaml:"onnx_output_name" cue:"onnx_output_name"`
+	Provider       string `json:"provider" yaml:"provider" cue:"provider"`
+	Model          string `json:"model" yaml:"model" cue:"model"`
+	BatchSize      int    `json:"batch_size" yaml:"batch_size" cue:"batch_size"`
+	Concurrent     int    `json:"concurrent" yaml:"concurrent" cue:"concurrent"`
+	ModelCacheDir  string `json:"model_cache_dir" yaml:"model_cache_dir" cue:"model_cache_dir"`
+	OnnxOutputName string `json:"onnx_output_name" yaml:"onnx_output_name" cue:"onnx_output_name"`
 }
 
 // LexicalConfig matches the 'lexical' section of semango.yml
 type LexicalConfig struct {
-	Enabled   bool    `yaml:"enabled" cue:"enabled"`
-	IndexPath string  `yaml:"index_path" cue:"index_path"`
-	BM25K1    float64 `yaml:"bm25_k1" cue:"bm25_k1"`
-	BM25B     float64 `yaml:"bm25_b" cue:"bm25_b"`
+	Enabled   bool    `json:"enabled" yaml:"enabled" cue:"enabled"`
+	IndexPath string  `json:"index_path" yaml:"index_path" cue:"index_path"`
+	BM25K1    float64 `json:"bm25_k1" yaml:"bm25_k1" cue:"bm25_k1"`
+	BM25B     float64 `json:"bm25_b" yaml:"bm25_b" cue:"bm25_b"`
 }
 
 // RerankerConfig matches the 'reranker' section of semango.yml
 type RerankerConfig struct {
-	Enabled            bool   `yaml:"enabled" cue:"enabled"`
-	Provider           string `yaml:"provider" cue:"provider"`
-	Model              string `yaml:"model" cue:"model"`
-	BatchSize          int    `yaml:"batch_size" cue:"batch_size"`
-	PerRequestOverride bool   `yaml:"per_request_override" cue:"per_request_override"`
+	Enabled            bool   `json:"enabled" yaml:"enabled" cue:"enabled"`
+	Provider           string `json:"provider" yaml:"provider" cue:"provider"`
+	Model              string `json:"model" yaml:"model" cue:"model"`
+	BatchSize          int    `json:"batch_size" yaml:"batch_size" cue:"batch_size"`
+	PerRequestOverride bool   `json:"per_request_override" yaml:"per_request_override" cue:"per_request_override"`
 }
 
 // HybridConfig matches the 'hybrid' section of semango.yml
 type HybridConfig struct {
-	VectorWeight  float64 `yaml:"vector_weight" cue:"vector_weight"`
-	LexicalWeight float64 `yaml:"lexical_weight" cue:"lexical_weight"`
-	Fusion        string  `yaml:"fusion" cue:"fusion"`
+	VectorWeight  float64 `json:"vector_weight" yaml:"vector_weight" cue:"vector_weight"`
+	LexicalWeight float64 `json:"lexical_weight" yaml:"lexical_weight" cue:"lexical_weight"`
+	Fusion        string  `json:"fusion" yaml:"fusion" cue:"fusion"`
 }
 
 // TabularConfig matches the 'tabular' section of semango.yml
 type TabularConfig struct {
-	MaxRowsEmbedded int    `yaml:"max_rows_embedded" cue:"max_rows_embedded"`
-	Sampling        string `yaml:"sampling" cue:"sampling"`
-	MinTextTokens   int    `yaml:"min_text_tokens" cue:"min_text_tokens"`
-	Delimiter       string `yaml:"delimiter" cue:"delimiter"`
+	MaxRowsEmbedded int    `json:"max_rows_embedded" yaml:"max_rows_embedded" cue:"max_rows_embedded"`
+	Sampling        string `json:"sampling" yaml:"sampling" cue:"sampling"`
+	MinTextTokens   int    `json:"min_text_tokens" yaml:"min_text_tokens" cue:"min_text_tokens"`
+	Delimiter       string `json:"delimiter" yaml:"delimiter" cue:"delimiter"`
 }
 
 // FilesConfig matches the 'files' section of semango.yml
 type FilesConfig struct {
-	Include      []string `yaml:"include" cue:"include"`
-	Exclude      []string `yaml:"exclude" cue:"exclude"`
-	ChunkSize    int      `yaml:"chunk_size" cue:"chunk_size"`
-	ChunkOverlap int      `yaml:"chunk_overlap" cue:"chunk_overlap"`
+	Include      []string `json:"include" yaml:"include" cue:"include"`
+	Exclude      []string `json:"exclude" yaml:"exclude" cue:"exclude"`
+	ChunkSize    int      `json:"chunk_size" yaml:"chunk_size" cue:"chunk_size"`
+	ChunkOverlap int      `json:"chunk_overlap" yaml:"chunk_overlap" cue:"chunk_overlap"`
 }
 
 // ServerConfig matches the 'server' section of semango.yml
 type ServerConfig struct {
-	Host    string     `yaml:"host" cue:"host"`
-	Port    int        `yaml:"port" cue:"port"`
-	Auth    AuthConfig `yaml:"auth" cue:"auth"`
-	TLSCert string     `yaml:"tls_cert" cue:"tls_cert"`
-	TLSCKey string     `yaml:"tls_key" cue:"tls_key"` // Note: spec.md mentions tls_cert only, but key is usually needed.
+	Host    string     `json:"host" yaml:"host" cue:"host"`
+	Port    int        `json:"port" yaml:"port" cue:"port"`
+	Auth    AuthConfig `json:"auth" yaml:"auth" cue:"auth"`
+	TLSCert string     `json:"tls_cert" yaml:"tls_cert" cue:"tls_cert"`
+	TLSCKey string     `json:"tls_key" yaml:"tls_key" cue:"tls_key"` // Note: spec.md mentions tls_cert only, but key is usually needed.
 }
 
 // AuthConfig matches the 'auth' sub-section of 'server'
 type AuthConfig struct {
-	Type     string `yaml:"type" cue:"type"`
-	TokenEnv string `yaml:"token_env" cue:"token_env"`
+	Type     string `json:"type" yaml:"type" cue:"type"`
+	TokenEnv string `json:"token_env" yaml:"token_env" cue:"token_env"`
 }
 
 // UIConfig matches the 'ui' section
 type UIConfig struct {
-	Enabled bool `yaml:"enabled" cue:"enabled"`
+	Enabled bool `json:"enabled" yaml:"enabled" cue:"enabled"`
 }
 
 // MCPConfig matches the 'mcp' section
 type MCPConfig struct {
-	Enabled bool `yaml:"enabled" cue:"enabled"`
+	Enabled bool `json:"enabled" yaml:"enabled" cue:"enabled"`
 }
 
 // ErrUnknownField is a custom error type for unknown configuration fields.
@@ -208,20 +207,10 @@ func Load(configPath string, cueSchemaPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(yamlData, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal YAML data from %s: %w", configPath, err)
-	}
-
 	ctx := cuecontext.New()
 	schemaVal := ctx.CompileBytes(schemaBytes, cue.Filename(cueSchemaPath))
 	if err := schemaVal.Err(); err != nil {
 		return nil, fmt.Errorf("failed to compile CUE schema from %s: %w", cueSchemaPath, err)
-	}
-
-	cueVal := ctx.Encode(cfg)
-	if err := cueVal.Err(); err != nil {
-		return nil, fmt.Errorf("failed to encode config struct to CUE value: %w", err)
 	}
 
 	configDef := schemaVal.LookupPath(cue.ParsePath("#Config"))
@@ -229,6 +218,20 @@ func Load(configPath string, cueSchemaPath string) (*Config, error) {
 		return nil, fmt.Errorf("#Config definition not found in CUE schema %s", cueSchemaPath)
 	}
 
+	// 1. Unmarshal YAML to a raw map to avoid Go default values (like 0 for int)
+	// which would conflict with CUE constraints (like >=1).
+	var rawMap map[string]interface{}
+	if err := yaml.Unmarshal(yamlData, &rawMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal YAML data to map from %s: %w", configPath, err)
+	}
+
+	// 2. Encode the raw map to CUE
+	cueVal := ctx.Encode(rawMap)
+	if err := cueVal.Err(); err != nil {
+		return nil, fmt.Errorf("failed to encode config map to CUE value: %w", err)
+	}
+
+	// 3. Unify with the #Config definition
 	instanceVal := configDef.Unify(cueVal)
 	if err := instanceVal.Err(); err != nil {
 		var cueErrList cueErrors.Error
@@ -243,6 +246,7 @@ func Load(configPath string, cueSchemaPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unify CUE #Config definition with config data from %s: %w", configPath, err)
 	}
 
+	// 4. Validate and ensure concrete values (fills in defaults)
 	if err := instanceVal.Validate(cue.Concrete(true)); err != nil {
 		var cueErrList cueErrors.Error
 		if stdlibErrors.As(err, &cueErrList) {
@@ -254,6 +258,12 @@ func Load(configPath string, cueSchemaPath string) (*Config, error) {
 			}
 		}
 		return nil, fmt.Errorf("CUE validation failed for %s (schema %s, def #Config): %w. Exit code 78 may be required.", configPath, cueSchemaPath, err)
+	}
+
+	// 5. Decode the unified value (with defaults applied) back into our Config struct
+	var cfg Config
+	if err := instanceVal.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to decode unified CUE value into Config struct: %w", err)
 	}
 
 	cfg.Embedding.ModelCacheDir = expandWithDefault(cfg.Embedding.ModelCacheDir)
@@ -268,8 +278,7 @@ func GetDefaultConfig() *Config {
 	return &Config{
 		Embedding: EmbeddingConfig{
 			Provider:       "local",
-			Model:          "text-embedding-3-large",
-			LocalModelPath: "onnx-models/all-MiniLM-L6-v2-onnx",
+			Model:          "onnx-models/all-MiniLM-L6-v2-onnx",
 			BatchSize:      48,
 			Concurrent:     4,
 			ModelCacheDir:  "${SEMANGO_MODEL_DIR:=~/.cache/semango}",
@@ -334,10 +343,8 @@ const DefaultConfigYAML = `# Semango configuration file
 embedding:
   # Provider for embeddings: local, openai, cohere, voyage
   provider: local
-  # Model name for the selected provider
-  model: text-embedding-3-large
-  # Path to local model (for 'local' provider, uses ONNX models)
-  local_model_path: onnx-models/bge-small-en-v1.5-onnx
+	# Model name for the selected provider (Hugging Face ID for local provider)
+	model: onnx-models/bge-small-en-v1.5-onnx
   batch_size: 48
   concurrent: 4
   # Directory where models are cached

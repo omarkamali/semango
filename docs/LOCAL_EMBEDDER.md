@@ -39,7 +39,7 @@ The local embedder supports popular sentence transformer models from Hugging Fac
 ```yaml
 embedding:
   provider: "local"
-  local_model_path: "sentence-transformers/all-MiniLM-L6-v2"
+  model: "sentence-transformers/all-MiniLM-L6-v2"
   batch_size: 32
 ```
 
@@ -48,7 +48,7 @@ embedding:
 ```yaml
 embedding:
   provider: "local"
-  local_model_path: "BAAI/bge-base-en-v1.5"
+  model: "BAAI/bge-base-en-v1.5"
   model_cache_dir: "~/.cache/semango/models"  # Where to store downloaded models
   batch_size: 16                              # Adjust based on your memory
   max_length: 512                             # Maximum token length
@@ -61,7 +61,7 @@ If you have already downloaded a model or want to use a custom model:
 ```yaml
 embedding:
   provider: "local"
-  local_model_path: "/path/to/your/model/directory"
+  model: "/path/to/your/model/directory"
   batch_size: 32
 ```
 
@@ -116,7 +116,7 @@ files:
 
 embedding:
   provider: "local"
-  local_model_path: "sentence-transformers/all-MiniLM-L6-v2"
+  model: "sentence-transformers/all-MiniLM-L6-v2"
   batch_size: 32
 
 search:
@@ -144,7 +144,7 @@ files:
 
 embedding:
   provider: "local"
-  local_model_path: "BAAI/bge-base-en-v1.5"
+  model: "BAAI/bge-base-en-v1.5"
   model_cache_dir: "~/.cache/semango/models"
   batch_size: 16
 
@@ -217,7 +217,7 @@ To migrate from OpenAI embeddings to local:
    # After  
    embedding:
      provider: "local"
-     local_model_path: "sentence-transformers/all-mpnet-base-v2"
+    model: "sentence-transformers/all-mpnet-base-v2"
    ```
 
 2. **Re-index your documents**:

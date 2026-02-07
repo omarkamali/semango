@@ -115,9 +115,8 @@ Below is the canonical generated file annotated with **defaults** and allowed en
 
 ```yaml
 embedding:
-  provider: openai         # enum: openai|cohere|voyage|local
-  model: text-embedding-3-large
-  local_model_path: "onnx-models/all-MiniLM-L6-v2-onnx"  # used if provider=local
+  provider: local         # enum: openai|cohere|voyage|local
+  model: "onnx-models/all-MiniLM-L6-v2-onnx"
   onnx_output_name: "pooling_layer_name"  # optional
   batch_size: 48           # 1–512 safe; perf ~linear until 128
   concurrent: 4            # simultaneous embed calls (goroutines)

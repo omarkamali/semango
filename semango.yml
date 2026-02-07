@@ -4,11 +4,9 @@
 embedding:
   # Provider for embeddings: local, openai, cohere, voyage
   provider: local
-  # Path to local model (for 'local' provider, uses ONNX models)
-  local_model_path: onnx-models/all-MiniLM-L6-v2-onnx
+  # Model name for the selected provider (Hugging Face ID or direct path for local provider)
+  model: onnx-models/all-MiniLM-L6-v2-onnx
   onnx_output_name: "[optional_pooling_layer]" # if not recognized by semango
-  # Model name for the selected provider if not local
-  model: text-embedding-3-large
   batch_size: 48
   concurrent: 4
   # Directory where models are cached

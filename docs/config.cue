@@ -18,17 +18,16 @@ package config
 
 #EmbeddingConfig: {
 	provider:         string | *"local" | "openai" | "cohere" | "voyage" // Default: local
-	model:            string // Example: text-embedding-3-large
-	local_model_path: string | *"onnx-models/all-MiniLM-L6-v2-onnx" // Default: onnx-models/all-MiniLM-L6-v2-onnx
+	model:            string // Example: text-embedding-3-large (or Hugging Face ID for local)
 	batch_size:       int & >=1 & <=512 | *48 // Default: 48
 	concurrent:       int & >=1 | *4          // Default: 4
-	model_cache_dir:  string // Removed default from here, as it's in semango.yml
+	model_cache_dir:  string | *"~/.cache/semango" // Default added to satisfy concreteness
 	onnx_output_name?: string // Optional
 }
 
 #LexicalConfig: {
 	enabled:    bool | *true
-	index_path: string // Removed default from here
+	index_path: string | *"./semango/index/bleve" // Default added
 	bm25_k1:    float  | *1.2                      // Default: 1.2
 	bm25_b:     float  | *0.75                     // Default: 0.75
 }

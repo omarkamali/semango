@@ -31,11 +31,11 @@ func NewEmbedderFromConfig(cfg config.EmbeddingConfig) (Embedder, error) {
 		}
 		return NewOpenAIEmbedder(openCfg)
 	case "local":
-		if cfg.LocalModelPath == "" {
-			return nil, fmt.Errorf("local model path is required for local embedder provider")
+		if cfg.Model == "" {
+			return nil, fmt.Errorf("embedding.model is required for local embedder provider")
 		}
 		localCfg := LocalEmbedderConfig{
-			ModelPath:  cfg.LocalModelPath,
+			ModelPath:  cfg.Model,
 			CacheDir:   cfg.ModelCacheDir,
 			BatchSize:  cfg.BatchSize,
 			MaxLength:  512, // Default max length

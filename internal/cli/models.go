@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,46 +90,31 @@ func NewModelsCmd() *cobra.Command {
 			}
 
 			fmt.Printf("Model cache: %s\n", cacheDir)
-			entries, err := os.ReadDir(cacheDir)
-			if err != nil {
-				if os.IsNotExist(err) {
-					fmt.Println("No local models installed.")
+			localModels := []ingest.ModelInfo{}
+			walkErr := filepath.WalkDir(cacheDir, func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					if os.IsNotExist(err) {
+						return nil
+					}
+					return err
+				}
+				if d.IsDir() {
 					return nil
 				}
-				return util.WrapError(err, "Failed to read model cache directory")
-			}
-
-			localModels := []ingest.ModelInfo{}
-			unknownDirs := []string{}
-
-			for _, entry := range entries {
-				if !entry.IsDir() {
-					continue
+				if d.Name() != modelMetadataFile {
+					return nil
 				}
-				modelDir := filepath.Join(cacheDir, entry.Name())
-				meta, err := readModelMetadata(modelDir)
+				meta, err := readModelMetadata(filepath.Dir(path))
 				if err == nil && meta.ID != "" {
 					localModels = append(localModels, ingest.GetModelMetadata(meta.ID))
-					continue
 				}
-
-				// Fallback: try to map directory to known catalog entries
-				catalog, _ := ingest.SearchModelsOnline("")
-				found := false
-				for _, m := range catalog {
-					if entry.Name() == strings.ReplaceAll(m.ID, "/", "_") {
-						localModels = append(localModels, m)
-						found = true
-						break
-					}
-				}
-
-				if !found {
-					unknownDirs = append(unknownDirs, entry.Name())
-				}
+				return nil
+			})
+			if walkErr != nil {
+				return util.WrapError(walkErr, "Failed to read model cache directory")
 			}
 
-			if len(localModels) == 0 && len(unknownDirs) == 0 {
+			if len(localModels) == 0 {
 				fmt.Println("No local models installed.")
 				return nil
 			}
@@ -139,9 +125,6 @@ func NewModelsCmd() *cobra.Command {
 
 			for _, model := range localModels {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", model.ID, model.Alias, model.Size, model.VRAM)
-			}
-			for _, dirName := range unknownDirs {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", dirName, "-", "-", "-")
 			}
 			w.Flush()
 
@@ -175,7 +158,7 @@ func NewModelsCmd() *cobra.Command {
 			}
 
 			force, _ := cmd.Flags().GetBool("force")
-			modelDir := filepath.Join(cacheDir, strings.ReplaceAll(info.ID, "/", "_"))
+			modelDir := modelCachePath(cacheDir, info.ID)
 			if !force && isModelInstalled(cacheDir, info.ID) {
 				fmt.Printf("Model already installed at %s\n", modelDir)
 				return nil
@@ -183,6 +166,7 @@ func NewModelsCmd() *cobra.Command {
 
 			if force {
 				_ = os.RemoveAll(modelDir)
+				_ = os.RemoveAll(legacyModelCachePath(cacheDir, info.ID))
 			}
 
 			fmt.Printf("Downloading %s...\n", info.ID)
@@ -212,14 +196,25 @@ func NewModelsCmd() *cobra.Command {
 
 			modelDir := ""
 			if strings.HasPrefix(target, "onnx-models/") {
-				modelDir = filepath.Join(cacheDir, strings.ReplaceAll(target, "/", "_"))
+				modelDir = modelCachePath(cacheDir, target)
 			} else {
 				info := ingest.GetModelMetadata(target)
 				if strings.HasPrefix(info.ID, "onnx-models/") {
-					modelDir = filepath.Join(cacheDir, strings.ReplaceAll(info.ID, "/", "_"))
+					modelDir = modelCachePath(cacheDir, info.ID)
 				} else {
 					modelDir = filepath.Join(cacheDir, target)
 				}
+			}
+
+			if info, err := os.Stat(modelDir); err != nil || !info.IsDir() {
+				legacyDir := modelDir
+				if strings.Contains(target, "/") {
+					legacyDir = legacyModelCachePath(cacheDir, target)
+				} else {
+					info := ingest.GetModelMetadata(target)
+					legacyDir = legacyModelCachePath(cacheDir, info.ID)
+				}
+				modelDir = legacyDir
 			}
 
 			info, statErr := os.Stat(modelDir)
@@ -242,9 +237,22 @@ func NewModelsCmd() *cobra.Command {
 }
 
 func isModelInstalled(cacheDir, modelID string) bool {
-	modelDir := filepath.Join(cacheDir, strings.ReplaceAll(modelID, "/", "_"))
+	modelDir := modelCachePath(cacheDir, modelID)
 	info, err := os.Stat(modelDir)
+	if err == nil && info.IsDir() {
+		return true
+	}
+	legacyDir := legacyModelCachePath(cacheDir, modelID)
+	info, err = os.Stat(legacyDir)
 	return err == nil && info.IsDir()
+}
+
+func modelCachePath(cacheDir, modelID string) string {
+	return filepath.Join(cacheDir, filepath.FromSlash(modelID))
+}
+
+func legacyModelCachePath(cacheDir, modelID string) string {
+	return filepath.Join(cacheDir, strings.ReplaceAll(modelID, "/", "_"))
 }
 
 func readModelMetadata(modelDir string) (modelMetadata, error) {

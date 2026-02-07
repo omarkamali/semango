@@ -55,7 +55,7 @@ func TestLocalEmbedder_ValidateConfig(t *testing.T) {
 				BatchSize: 32,
 				MaxLength: 512,
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 	}
 
@@ -338,7 +338,12 @@ func TestIsLocalPath(t *testing.T) {
 		{
 			name:     "simple model name",
 			path:     "model-name",
-			expected: false,
+			expected: true,
+		},
+		{
+			name:     "onnx file reference",
+			path:     "models/my-model.onnx",
+			expected: true,
 		},
 	}
 

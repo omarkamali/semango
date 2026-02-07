@@ -22,7 +22,8 @@ import (
 // LocalEmbedder implements the Embedder interface using local ONNX models.
 // It supports sentence transformer models from the onnx-models organization on Hugging Face.
 type LocalEmbedder struct {
-	modelPath      string
+	modelDir       string
+	modelOnnxPath  string
 	dimension      int
 	maxLength      int
 	batchSize      int
@@ -103,20 +104,13 @@ func NewLocalEmbedder(config LocalEmbedderConfig) (*LocalEmbedder, error) {
 		maxLength: config.MaxLength,
 	}
 
-	// Determine if this is a local path or an onnx-models model name
-	var modelDir string
-	if isLocalPath(config.ModelPath) {
-		modelDir = config.ModelPath
-	} else {
-		// Download from onnx-models organization
-		var err error
-		modelDir, err = embedder.downloadONNXModel(config.ModelPath, config.CacheDir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to download model: %w", err)
-		}
+	modelDir, modelOnnxPath, err := embedder.resolveModelLocation(config.ModelPath, config.CacheDir)
+	if err != nil {
+		return nil, err
 	}
 
-	embedder.modelPath = modelDir
+	embedder.modelDir = modelDir
+	embedder.modelOnnxPath = modelOnnxPath
 
 	// Load tokenizer
 	tokenizer, err := embedder.loadTokenizer(modelDir)
@@ -148,14 +142,14 @@ func NewLocalEmbedder(config LocalEmbedderConfig) (*LocalEmbedder, error) {
 	}
 
 	// Detect the correct output name for this ONNX model
-	outputName, err := embedder.detectOutputName(modelDir, config.OutputName)
+	outputName, err := embedder.detectOutputName(modelOnnxPath, config.OutputName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect output name: %w", err)
 	}
 	embedder.outputName = outputName
 
 	// Initialize ONNX session
-	session, err := embedder.initONNXSession(modelDir, outputName)
+	session, err := embedder.initONNXSession(modelOnnxPath, outputName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize ONNX session: %w", err)
 	}
@@ -165,31 +159,133 @@ func NewLocalEmbedder(config LocalEmbedderConfig) (*LocalEmbedder, error) {
 }
 
 // isLocalPath checks if the given path is a local file system path.
+
 func isLocalPath(path string) bool {
-	// Check if it's an absolute path
-	if filepath.IsAbs(path) {
-		return true
-	}
-	// Check if it starts with ./ or ../
-	if strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
-		return true
-	}
-	// Check if it contains file separators but not forward slashes that could be onnx-models names
-	// onnx-models names typically have format "model-name-onnx" without additional path separators
-	if strings.Contains(path, string(filepath.Separator)) && filepath.Separator != '/' {
-		return true
-	}
-	// If it contains a forward slash, check if it looks like a file path vs onnx-models name
-	if strings.Contains(path, "/") {
-		// If it has more than one slash or contains dots, likely a file path
-		slashCount := strings.Count(path, "/")
-		if slashCount > 1 || strings.Contains(path, ".") {
-			return true
-		}
-		// Single slash without dots could be onnx-models name like "onnx-models/all-MiniLM-L6-v2-onnx"
+	if path == "" {
 		return false
 	}
+	// Absolute or explicit relative paths are always local
+	if filepath.IsAbs(path) || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
+		return true
+	}
+	// Direct ONNX file references are local
+	if strings.HasSuffix(strings.ToLower(path), ".onnx") {
+		return true
+	}
+	// No slash => local name within cache dir
+	if !strings.Contains(path, "/") {
+		return true
+	}
+	// Has slash and is not an ONNX file => treat as Hugging Face model ID
 	return false
+}
+
+func (le *LocalEmbedder) resolveModelLocation(modelRef, cacheDir string) (string, string, error) {
+	if modelRef == "" {
+		return "", "", fmt.Errorf("model path is required")
+	}
+	if cacheDir == "" {
+		return "", "", fmt.Errorf("cache directory is required")
+	}
+
+	if isLocalPath(modelRef) {
+		localPath := modelRef
+		if !filepath.IsAbs(localPath) && !strings.HasPrefix(localPath, "./") && !strings.HasPrefix(localPath, "../") {
+			localPath = filepath.Join(cacheDir, filepath.FromSlash(localPath))
+		}
+		return resolveLocalModelPath(localPath)
+	}
+
+	modelDir := filepath.Join(cacheDir, filepath.FromSlash(modelRef))
+	if info, err := os.Stat(modelDir); err == nil && info.IsDir() {
+		onnxPath, err := findOnnxFileInDir(modelDir)
+		if err == nil {
+			return modelDir, onnxPath, nil
+		}
+	}
+
+	repoFiles, err := listHuggingFaceRepoFiles(modelRef)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to query Hugging Face repo: %w", err)
+	}
+	onnxFiles := filterOnnxFiles(repoFiles)
+	if len(onnxFiles) == 0 {
+		return "", "", fmt.Errorf("no .onnx files found in Hugging Face repo: %s", modelRef)
+	}
+
+	if err := os.MkdirAll(modelDir, 0755); err != nil {
+		return "", "", fmt.Errorf("failed to create model directory: %w", err)
+	}
+
+	if err := le.downloadHuggingFaceFiles(modelRef, modelDir, repoFiles); err != nil {
+		return "", "", fmt.Errorf("failed to download model files: %w", err)
+	}
+
+	selectedOnnx := selectOnnxFile(onnxFiles)
+	onnxPath := filepath.Join(modelDir, selectedOnnx)
+	if _, err := os.Stat(onnxPath); err != nil {
+		return "", "", fmt.Errorf("ONNX model file not found after download: %s", onnxPath)
+	}
+
+	return modelDir, onnxPath, nil
+}
+
+func resolveLocalModelPath(localPath string) (string, string, error) {
+	if strings.HasSuffix(strings.ToLower(localPath), ".onnx") {
+		if _, err := os.Stat(localPath); err != nil {
+			return "", "", fmt.Errorf("ONNX model file not found: %s", localPath)
+		}
+		return filepath.Dir(localPath), localPath, nil
+	}
+
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return "", "", fmt.Errorf("model path not found: %s", localPath)
+	}
+	if !info.IsDir() {
+		return "", "", fmt.Errorf("model path is not a directory: %s", localPath)
+	}
+
+	onnxPath, err := findOnnxFileInDir(localPath)
+	if err != nil {
+		return "", "", err
+	}
+
+	return localPath, onnxPath, nil
+}
+
+func findOnnxFileInDir(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("failed to read model directory: %w", err)
+	}
+
+	preferred := ""
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.EqualFold(name, "model.onnx") {
+			preferred = name
+			break
+		}
+	}
+	if preferred != "" {
+		return filepath.Join(dir, preferred), nil
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(strings.ToLower(name), ".onnx") {
+			return filepath.Join(dir, name), nil
+		}
+	}
+
+	return "", fmt.Errorf("no .onnx files found in model directory: %s", dir)
 }
 
 // downloadONNXModel downloads a model from onnx-models organization on Hugging Face Hub.
@@ -202,11 +298,19 @@ func (le *LocalEmbedder) downloadONNXModel(modelName, cacheDir string) (string, 
 		fullModelName = "onnx-models/" + modelName
 	}
 
-	modelDir := filepath.Join(cacheDir, strings.ReplaceAll(fullModelName, "/", "_"))
+	modelDir := filepath.Join(cacheDir, filepath.FromSlash(fullModelName))
 
 	// Check if model already exists
-	if _, err := os.Stat(modelDir); err == nil {
+	if info, err := os.Stat(modelDir); err == nil && info.IsDir() {
 		return modelDir, nil
+	}
+
+	repoFiles, err := listHuggingFaceRepoFiles(fullModelName)
+	if err != nil {
+		return "", fmt.Errorf("failed to query Hugging Face repo: %w", err)
+	}
+	if len(filterOnnxFiles(repoFiles)) == 0 {
+		return "", fmt.Errorf("no .onnx files found in Hugging Face repo: %s", fullModelName)
 	}
 
 	// Create model directory
@@ -214,32 +318,8 @@ func (le *LocalEmbedder) downloadONNXModel(modelName, cacheDir string) (string, 
 		return "", fmt.Errorf("failed to create model directory: %w", err)
 	}
 
-	// List of files to download for an ONNX sentence transformer model
-	files := []string{
-		"config.json",
-		"tokenizer.json",
-		"tokenizer_config.json",
-		"vocab.txt",
-		"model.onnx",
-		"1_Pooling/config.json",
-		"special_tokens_map.json",
-	}
-
-	baseURL := fmt.Sprintf("https://huggingface.co/%s/resolve/main", fullModelName)
-
-	for _, file := range files {
-		url := fmt.Sprintf("%s/%s", baseURL, file)
-		localPath := filepath.Join(modelDir, file)
-
-		// Create subdirectories if needed
-		if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
-			return "", fmt.Errorf("failed to create directory for %s: %w", file, err)
-		}
-
-		if err := le.downloadFile(url, localPath); err != nil {
-			// Some files might not exist, continue with others
-			continue
-		}
+	if err := le.downloadHuggingFaceFiles(fullModelName, modelDir, repoFiles); err != nil {
+		return "", err
 	}
 
 	return modelDir, nil
@@ -265,6 +345,103 @@ func (le *LocalEmbedder) downloadFile(url, localPath string) error {
 
 	_, err = io.Copy(out, resp.Body)
 	return err
+}
+
+type hfModelResponse struct {
+	Siblings []struct {
+		RFilename string `json:"rfilename"`
+	} `json:"siblings"`
+}
+
+func listHuggingFaceRepoFiles(modelID string) ([]string, error) {
+	apiURL := fmt.Sprintf("https://huggingface.co/api/models/%s", modelID)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to query model metadata: status %d", resp.StatusCode)
+	}
+
+	var parsed hfModelResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("failed to decode model metadata: %w", err)
+	}
+
+	files := make([]string, 0, len(parsed.Siblings))
+	for _, s := range parsed.Siblings {
+		if s.RFilename != "" {
+			files = append(files, s.RFilename)
+		}
+	}
+
+	return files, nil
+}
+
+func filterOnnxFiles(files []string) []string {
+	onnx := []string{}
+	for _, f := range files {
+		if strings.HasSuffix(strings.ToLower(f), ".onnx") {
+			onnx = append(onnx, f)
+		}
+	}
+	return onnx
+}
+
+func selectOnnxFile(onnxFiles []string) string {
+	for _, f := range onnxFiles {
+		if strings.EqualFold(filepath.Base(f), "model.onnx") {
+			return f
+		}
+	}
+	return onnxFiles[0]
+}
+
+func (le *LocalEmbedder) downloadHuggingFaceFiles(modelID, modelDir string, repoFiles []string) error {
+	standardFiles := []string{
+		"config.json",
+		"tokenizer.json",
+		"tokenizer_config.json",
+		"vocab.txt",
+		"1_Pooling/config.json",
+		"special_tokens_map.json",
+	}
+
+	repoSet := make(map[string]struct{}, len(repoFiles))
+	for _, f := range repoFiles {
+		repoSet[f] = struct{}{}
+	}
+
+	filesToDownload := make(map[string]struct{})
+	for _, f := range standardFiles {
+		if _, ok := repoSet[f]; ok {
+			filesToDownload[f] = struct{}{}
+		}
+	}
+	for _, f := range repoFiles {
+		if strings.HasSuffix(strings.ToLower(f), ".onnx") {
+			filesToDownload[f] = struct{}{}
+		}
+	}
+
+	baseURL := fmt.Sprintf("https://huggingface.co/%s/resolve/main", modelID)
+
+	for file := range filesToDownload {
+		url := fmt.Sprintf("%s/%s", baseURL, file)
+		localPath := filepath.Join(modelDir, filepath.FromSlash(file))
+
+		if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory for %s: %w", file, err)
+		}
+
+		if err := le.downloadFile(url, localPath); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // loadTokenizer loads the tokenizer from the model directory.
@@ -408,13 +585,12 @@ func (le *LocalEmbedder) loadPoolingConfig(modelDir string) (*PoolingConfig, err
 }
 
 // detectOutputName detects the correct output name for the ONNX model.
-func (le *LocalEmbedder) detectOutputName(modelDir string, manualOutputName string) (string, error) {
-	modelPath := filepath.Join(modelDir, "model.onnx")
+func (le *LocalEmbedder) detectOutputName(modelOnnxPath string, manualOutputName string) (string, error) {
 
 	// Get model info to determine available output names
-	_, outputs, err := onnxruntime_go.GetInputOutputInfo(modelPath)
+	_, outputs, err := onnxruntime_go.GetInputOutputInfo(modelOnnxPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to get model info for %s: %w", modelPath, err)
+		return "", fmt.Errorf("failed to get model info for %s: %w", modelOnnxPath, err)
 	}
 
 	availableOutputs := make([]string, 0, len(outputs))
@@ -434,7 +610,7 @@ func (le *LocalEmbedder) detectOutputName(modelDir string, manualOutputName stri
 			"1. Inspect your model architecture at https://netron.app by uploading your model.onnx file.\n"+
 			"2. Find the Name of the output node you wish to use (usually the last Layer or a pooling Layer).\n"+
 			"3. Update your semango.yml: embedding.onnx_output_name: \"<name>\"",
-			manualOutputName, modelPath, availableOutputs)
+			manualOutputName, modelOnnxPath, availableOutputs)
 	}
 
 	// Priority list for sentence-level or good token-level embeddings.
@@ -473,18 +649,17 @@ func (le *LocalEmbedder) detectOutputName(modelDir string, manualOutputName stri
 		"1. Open https://netron.app and upload your model.onnx from: %s\n"+
 		"2. Locate the output nodes and identify which one contains the embeddings.\n"+
 		"3. Explicitly set this name in your semango.yml using the 'onnx_output_name' property under 'embedding'.",
-		availableOutputs, modelPath)
+		availableOutputs, modelOnnxPath)
 }
 
 // initONNXSession initializes the ONNX runtime session.
-func (le *LocalEmbedder) initONNXSession(modelDir string, outputName string) (*onnxruntime_go.DynamicAdvancedSession, error) {
-	modelPath := filepath.Join(modelDir, "model.onnx")
-	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("ONNX model file not found: %s", modelPath)
+func (le *LocalEmbedder) initONNXSession(modelOnnxPath string, outputName string) (*onnxruntime_go.DynamicAdvancedSession, error) {
+	if _, err := os.Stat(modelOnnxPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("ONNX model file not found: %s", modelOnnxPath)
 	}
 
 	// Get model info to determine input names and output pooling
-	inputsInfo, outputsInfo, err := onnxruntime_go.GetInputOutputInfo(modelPath)
+	inputsInfo, outputsInfo, err := onnxruntime_go.GetInputOutputInfo(modelOnnxPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get model info: %w", err)
 	}
@@ -507,7 +682,7 @@ func (le *LocalEmbedder) initONNXSession(modelDir string, outputName string) (*o
 
 	// Create dynamic session
 	session, err := onnxruntime_go.NewDynamicAdvancedSession(
-		modelPath,
+		modelOnnxPath,
 		inputNames,
 		[]string{outputName},
 		nil,
@@ -527,7 +702,7 @@ func (le *LocalEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 		return [][]float32{}, nil
 	}
 
-	logger.Debug("Starting local embedding", "num_texts", len(texts), "model_path", le.modelPath)
+	logger.Debug("Starting local embedding", "num_texts", len(texts), "model_path", le.modelOnnxPath)
 
 	// Process texts in batches
 	var allEmbeddings [][]float32
@@ -933,21 +1108,6 @@ func ValidateModelConfig(config LocalEmbedderConfig) error {
 
 	if config.MaxLength < 0 {
 		return fmt.Errorf("max_length must be non-negative")
-	}
-
-	// If it's an onnx-models model name, validate it's supported
-	if !isLocalPath(config.ModelPath) {
-		supported := GetSupportedModels()
-		found := false
-		for _, model := range supported {
-			if model == config.ModelPath {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("unsupported model: %s. Supported models: %v", config.ModelPath, supported)
-		}
 	}
 
 	return nil
