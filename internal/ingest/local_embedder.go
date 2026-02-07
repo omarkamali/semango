@@ -744,13 +744,29 @@ func (le *LocalEmbedder) initONNXSession(modelOnnxPath string, outputName string
 			slog.Warn("Failed to create ONNX session options for GPU, falling back to CPU", "error", err)
 		} else {
 			// Try enabling CUDA
-			err = options.AppendExecutionProviderCUDA()
-			if err != nil {
-				slog.Warn("GPU requested but CUDA execution provider failed to initialize, falling back to CPU", "error", err)
-				options.Destroy()
+			cudaOptions, cudaErr := onnxruntime_go.NewCUDAProviderOptions()
+			if cudaErr != nil {
+				slog.Warn("Failed to create CUDA provider options, falling back to CPU", "error", cudaErr)
+				if err := options.Destroy(); err != nil {
+					slog.Warn("Failed to destroy ONNX session options after CUDA provider failure", "error", err)
+				}
 				options = nil
 			} else {
-				slog.Info("GPU acceleration (CUDA) enabled for ONNX session")
+				defer func() {
+					if destroyErr := cudaOptions.Destroy(); destroyErr != nil {
+						slog.Warn("Failed to destroy CUDA provider options", "error", destroyErr)
+					}
+				}()
+				err = options.AppendExecutionProviderCUDA(cudaOptions)
+				if err != nil {
+					slog.Warn("GPU requested but CUDA execution provider failed to initialize, falling back to CPU", "error", err)
+					if destroyErr := options.Destroy(); destroyErr != nil {
+						slog.Warn("Failed to destroy ONNX session options after CUDA activation failure", "error", destroyErr)
+					}
+					options = nil
+				} else {
+					slog.Info("GPU acceleration (CUDA) enabled for ONNX session")
+				}
 			}
 		}
 	}
@@ -764,7 +780,9 @@ func (le *LocalEmbedder) initONNXSession(modelOnnxPath string, outputName string
 	)
 	if err != nil {
 		if options != nil {
-			options.Destroy()
+			if destroyErr := options.Destroy(); destroyErr != nil {
+				slog.Warn("Failed to destroy ONNX session options after session creation failure", "error", destroyErr)
+			}
 		}
 		return nil, fmt.Errorf("failed to create dynamic ONNX session: %w", err)
 	}
