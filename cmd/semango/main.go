@@ -46,8 +46,26 @@ var rootCmd = &cobra.Command{
 			util.SetLogLevel(slog.LevelDebug)
 		}
 
-		if cmd.Name() == "init" || (cmd.Parent() != nil && cmd.Parent().Name() == "init") { // also skip for subcommands of init if any
-			slog.Debug("Skipping configuration loading for init command or its subcommands")
+		// Skip configuration loading for commands that don't need it
+		skipConfigCommands := map[string]bool{
+			"init":       true,
+			"install":    true,
+			"version":    true,
+			"models":     true,
+			"help":       true,
+			"completion": true,
+		}
+
+		isSkip := false
+		for curr := cmd; curr != nil; curr = curr.Parent() {
+			if skipConfigCommands[curr.Name()] {
+				isSkip = true
+				break
+			}
+		}
+
+		if isSkip {
+			slog.Debug("Skipping configuration loading", "command", cmd.Name())
 			return nil
 		}
 
