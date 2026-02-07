@@ -207,14 +207,12 @@ func NewModelsCmd() *cobra.Command {
 			}
 
 			if info, err := os.Stat(modelDir); err != nil || !info.IsDir() {
-				legacyDir := modelDir
 				if strings.Contains(target, "/") {
-					legacyDir = legacyModelCachePath(cacheDir, target)
+					modelDir = legacyModelCachePath(cacheDir, target)
 				} else {
 					info := ingest.GetModelMetadata(target)
-					legacyDir = legacyModelCachePath(cacheDir, info.ID)
+					modelDir = legacyModelCachePath(cacheDir, info.ID)
 				}
-				modelDir = legacyDir
 			}
 
 			info, statErr := os.Stat(modelDir)
