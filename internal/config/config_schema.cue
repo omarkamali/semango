@@ -20,7 +20,7 @@ package config
 #EmbeddingConfig: {
 	provider:         string | *"local" | "openai" | "cohere" | "voyage"
 	model:            string
-	local_model_path: string | *"models/e5-small.gguf"
+	local_model_path: string | *"onnx-models/bge-small-en-v1.5-onnx"
 	batch_size:       int & >=1 & <=512 | *48
 	concurrent:       int & >=1 | *4
 	model_cache_dir:  string

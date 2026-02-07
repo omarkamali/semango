@@ -1,52 +1,84 @@
+# Semango configuration file
+
+# Embedding settings
 embedding:
-    provider: openai
-    model: text-embedding-3-large
-    local_model_path: models/e5-small.gguf
-    batch_size: 48
-    concurrent: 4
-    model_cache_dir: ${SEMANGO_MODEL_DIR:=~/.cache/semango}
+  # Provider for embeddings: local, openai, cohere, voyage
+  provider: local
+  # Path to local model (for 'local' provider, uses ONNX models)
+  local_model_path: onnx-models/all-MiniLM-L6-v2-onnx
+  onnx_output_name: "[optional_pooling_layer]" # if not recognized by semango
+  # Model name for the selected provider if not local
+  model: text-embedding-3-large
+  batch_size: 48
+  concurrent: 4
+  # Directory where models are cached
+  model_cache_dir: "${SEMANGO_MODEL_DIR:=~/.cache/semango}"
+
+# Lexical search settings (BM25)
 lexical:
-    enabled: true
-    index_path: ./semango/index/bleve
-    bm25_k1: 1.2
-    bm25_b: 0.75
+  enabled: true
+  index_path: ./semango/index/bleve
+  bm25_k1: 1.2
+  bm25_b: 0.75
+
+# Reranker settings
 reranker:
-    enabled: false
-    provider: cohere
-    model: rerank-english-v3.0
-    batch_size: 32
-    per_request_override: true
+  enabled: false
+  provider: cohere
+  model: rerank-english-v3.0
+  batch_size: 32
+  per_request_override: true
+
+# Hybrid search merging settings
 hybrid:
-    vector_weight: 0.7
-    lexical_weight: 0.3
-    fusion: linear
+  vector_weight: 0.7
+  lexical_weight: 0.3
+  fusion: linear
+
+# File indexing settings
 files:
-    include:
-        - '**/*.md'
-        - '**/*.go'
-        - '**/*.{png,jpg,jpeg}'
-        - '**/*.pdf'
-    exclude:
-        - .git/**
-        - node_modules/**
-        - vendor/**
+  include:
+    - "**/*.md"
+    - "**/*.go"
+    - "**/*.{png,jpg,jpeg}"
+    - "**/*.pdf"
+    - "**/*.csv"
+    - "**/*.json"
+    - "**/*.jsonl"
+    - "**/*.parquet"
+  exclude:
+    - ".git/**"
+    - "node_modules/**"
+    - "vendor/**"
+  chunk_size: 1000
+  chunk_overlap: 200
+
+# Server settings
 server:
-    host: 0.0.0.0
-    port: 8181
-    auth:
-        type: token
-        token_env: SEMANGO_TOKENS
-    tls_cert: ""
-    tls_key: ""
+  host: 0.0.0.0
+  port: 8181
+  auth:
+    type: token
+    token_env: SEMANGO_TOKENS
+  tls_cert: ""
+  tls_key: ""
+
+# Plugin settings
 plugins:
-    - plugins/
-    - ../shared/my_custom.so
+  - plugins/
+  - ../shared/my_custom.so
+
+# Web UI settings
 ui:
-    enabled: true
+  enabled: true
+
+# Model Context Protocol (MCP) settings
 mcp:
-    enabled: true
+  enabled: true
+
+# Tabular data settings
 tabular:
-    max_rows_embedded: 1000
-    sampling: random
-    min_text_tokens: 5
-    delimiter: ","
+  max_rows_embedded: 1000
+  sampling: random
+  min_text_tokens: 5
+  delimiter: ""

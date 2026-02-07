@@ -19,10 +19,11 @@ package config
 #EmbeddingConfig: {
 	provider:         string | *"local" | "openai" | "cohere" | "voyage" // Default: local
 	model:            string // Example: text-embedding-3-large
-	local_model_path: string | *"models/e5-small.gguf" // Default: models/e5-small.gguf
+	local_model_path: string | *"onnx-models/all-MiniLM-L6-v2-onnx" // Default: onnx-models/all-MiniLM-L6-v2-onnx
 	batch_size:       int & >=1 & <=512 | *48 // Default: 48
 	concurrent:       int & >=1 | *4          // Default: 4
 	model_cache_dir:  string // Removed default from here, as it's in semango.yml
+	onnx_output_name?: string // Optional
 }
 
 #LexicalConfig: {

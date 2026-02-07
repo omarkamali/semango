@@ -42,6 +42,7 @@ type EmbeddingConfig struct {
 	BatchSize      int    `yaml:"batch_size" cue:"batch_size"`
 	Concurrent     int    `yaml:"concurrent" cue:"concurrent"`
 	ModelCacheDir  string `yaml:"model_cache_dir" cue:"model_cache_dir"`
+	OnnxOutputName string `yaml:"onnx_output_name" cue:"onnx_output_name"`
 }
 
 // LexicalConfig matches the 'lexical' section of semango.yml
@@ -268,7 +269,7 @@ func GetDefaultConfig() *Config {
 		Embedding: EmbeddingConfig{
 			Provider:       "local",
 			Model:          "text-embedding-3-large",
-			LocalModelPath: "models/e5-small.gguf",
+			LocalModelPath: "onnx-models/all-MiniLM-L6-v2-onnx",
 			BatchSize:      48,
 			Concurrent:     4,
 			ModelCacheDir:  "${SEMANGO_MODEL_DIR:=~/.cache/semango}",
@@ -326,18 +327,97 @@ func GetDefaultConfig() *Config {
 	}
 }
 
+// DefaultConfigYAML is a template for the default configuration file with comments.
+const DefaultConfigYAML = `# Semango configuration file
+
+# Embedding settings
+embedding:
+  # Provider for embeddings: local, openai, cohere, voyage
+  provider: local
+  # Model name for the selected provider
+  model: text-embedding-3-large
+  # Path to local model (for 'local' provider, uses ONNX models)
+  local_model_path: onnx-models/bge-small-en-v1.5-onnx
+  batch_size: 48
+  concurrent: 4
+  # Directory where models are cached
+  model_cache_dir: "${SEMANGO_MODEL_DIR:=~/.cache/semango}"
+
+# Lexical search settings (BM25)
+lexical:
+  enabled: true
+  index_path: ./semango/index/bleve
+  bm25_k1: 1.2
+  bm25_b: 0.75
+
+# Reranker settings
+reranker:
+  enabled: false
+  provider: cohere
+  model: rerank-english-v3.0
+  batch_size: 32
+  per_request_override: true
+
+# Hybrid search merging settings
+hybrid:
+  vector_weight: 0.7
+  lexical_weight: 0.3
+  fusion: linear
+
+# File indexing settings
+files:
+  include:
+    - "**/*.md"
+    - "**/*.go"
+    - "**/*.{png,jpg,jpeg}"
+    - "**/*.pdf"
+    - "**/*.csv"
+    - "**/*.json"
+    - "**/*.jsonl"
+    - "**/*.parquet"
+  exclude:
+    - ".git/**"
+    - "node_modules/**"
+    - "vendor/**"
+  chunk_size: 1000
+  chunk_overlap: 200
+
+# Server settings
+server:
+  host: 0.0.0.0
+  port: 8181
+  auth:
+    type: token
+    token_env: SEMANGO_TOKENS
+  tls_cert: ""
+  tls_key: ""
+
+# Plugin settings
+plugins:
+  - plugins/
+  - ../shared/my_custom.so
+
+# Web UI settings
+ui:
+  enabled: true
+
+# Model Context Protocol (MCP) settings
+mcp:
+  enabled: true
+
+# Tabular data settings
+tabular:
+  max_rows_embedded: 1000
+  sampling: random
+  min_text_tokens: 5
+  delimiter: ""
+`
+
 // WriteDefaultConfig writes the default configuration to the specified path.
 // If the path is empty, it uses DefaultConfigPath.
 func WriteDefaultConfig(configPath string) error {
 	if configPath == "" {
 		configPath = DefaultConfigPath
-	}
-
-	cfg := GetDefaultConfig()
-
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal default config: %w", err)
 	}
 
 	// Ensure directory exists
@@ -348,7 +428,7 @@ func WriteDefaultConfig(configPath string) error {
 		}
 	}
 
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(DefaultConfigYAML), 0644); err != nil {
 		return fmt.Errorf("failed to write default config to %s: %w", configPath, err)
 	}
 	return nil

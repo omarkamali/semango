@@ -35,10 +35,11 @@ func NewEmbedderFromConfig(cfg config.EmbeddingConfig) (Embedder, error) {
 			return nil, fmt.Errorf("local model path is required for local embedder provider")
 		}
 		localCfg := LocalEmbedderConfig{
-			ModelPath: cfg.LocalModelPath,
-			CacheDir:  cfg.ModelCacheDir,
-			BatchSize: cfg.BatchSize,
-			MaxLength: 512, // Default max length
+			ModelPath:  cfg.LocalModelPath,
+			CacheDir:   cfg.ModelCacheDir,
+			BatchSize:  cfg.BatchSize,
+			MaxLength:  512, // Default max length
+			OutputName: cfg.OnnxOutputName,
 		}
 		// Validate configuration
 		if err := ValidateModelConfig(localCfg); err != nil {

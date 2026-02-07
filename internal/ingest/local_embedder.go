@@ -22,24 +22,27 @@ import (
 // LocalEmbedder implements the Embedder interface using local ONNX models.
 // It supports sentence transformer models from the onnx-models organization on Hugging Face.
 type LocalEmbedder struct {
-	modelPath     string
-	dimension     int
-	maxLength     int
-	batchSize     int
-	tokenizer     *Tokenizer
-	session       *onnxruntime_go.AdvancedSession
-	poolingConfig *PoolingConfig
-	outputName    string // Cached output name for the ONNX model
-	mu            sync.RWMutex
+	modelPath      string
+	dimension      int
+	maxLength      int
+	batchSize      int
+	tokenizer      *Tokenizer
+	session        *onnxruntime_go.DynamicAdvancedSession
+	inputNames     []string
+	poolingConfig  *PoolingConfig
+	outputName     string // Cached output name for the ONNX model
+	outputIsPooled bool   // Whether the output is already pooled (sentence-level)
+	mu             sync.RWMutex
 }
 
 // LocalEmbedderConfig holds configuration for the local embedder.
 type LocalEmbedderConfig struct {
-	ModelPath string // Path to the model directory or onnx-models model name
-	CacheDir  string // Directory to cache downloaded models
-	BatchSize int    // Batch size for inference
-	MaxLength int    // Maximum sequence length
-	ModelName string // Specific model name (e.g., "all-MiniLM-L6-v2-onnx")
+	ModelPath  string // Path to the model directory or onnx-models model name
+	CacheDir   string // Directory to cache downloaded models
+	BatchSize  int    // Batch size for inference
+	MaxLength  int    // Maximum sequence length
+	ModelName  string // Specific model name (e.g., "all-MiniLM-L6-v2-onnx")
+	OutputName string // Manually specified output name
 }
 
 // Tokenizer handles text tokenization for sentence transformers.
@@ -130,19 +133,33 @@ func NewLocalEmbedder(config LocalEmbedderConfig) (*LocalEmbedder, error) {
 	embedder.poolingConfig = poolingConfig
 	embedder.dimension = poolingConfig.WordEmbeddingDimension
 
-	// Initialize ONNX session
-	session, err := embedder.initONNXSession(modelDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize ONNX session: %w", err)
+	// Initialize ONNX Runtime environment if not already done
+	if !onnxruntime_go.IsInitialized() {
+		libPath, err := ortlib.EnsureSharedLibrary()
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare onnxruntime library: %w", err)
+		}
+		onnxruntime_go.SetSharedLibraryPath(libPath)
+
+		err = onnxruntime_go.InitializeEnvironment()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize ONNX runtime: %w", err)
+		}
 	}
-	embedder.session = session
 
 	// Detect the correct output name for this ONNX model
-	outputName, err := embedder.detectOutputName(modelDir)
+	outputName, err := embedder.detectOutputName(modelDir, config.OutputName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect output name: %w", err)
 	}
 	embedder.outputName = outputName
+
+	// Initialize ONNX session
+	session, err := embedder.initONNXSession(modelDir, outputName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize ONNX session: %w", err)
+	}
+	embedder.session = session
 
 	return embedder, nil
 }
@@ -391,159 +408,112 @@ func (le *LocalEmbedder) loadPoolingConfig(modelDir string) (*PoolingConfig, err
 }
 
 // detectOutputName detects the correct output name for the ONNX model.
-func (le *LocalEmbedder) detectOutputName(modelDir string) (string, error) {
-	outputNames := []string{"pooler_output", "last_hidden_state", "output", "logits", "embeddings", "hidden_states", "token_embeddings"}
+func (le *LocalEmbedder) detectOutputName(modelDir string, manualOutputName string) (string, error) {
+	modelPath := filepath.Join(modelDir, "model.onnx")
 
-	modelPath := modelDir + "/model.onnx"
-	fmt.Printf("DEBUG detectOutputName: trying model path: %s\n", modelPath)
+	// Get model info to determine available output names
+	_, outputs, err := onnxruntime_go.GetInputOutputInfo(modelPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get model info for %s: %w", modelPath, err)
+	}
 
-	for _, outputName := range outputNames {
-		// Try to create a session with this output name and actually run inference to validate
-		dynamicSession, err := onnxruntime_go.NewDynamicAdvancedSession(
-			modelPath,
-			[]string{"input_ids", "attention_mask", "token_type_ids"},
-			[]string{outputName},
-			nil,
-		)
-		if err != nil {
-			fmt.Printf("DEBUG detectOutputName: FAILED to create session with output name: %s, error: %v\n", outputName, err)
-			continue
+	availableOutputs := make([]string, 0, len(outputs))
+	for _, o := range outputs {
+		availableOutputs = append(availableOutputs, o.Name)
+	}
+
+	if manualOutputName != "" {
+		for _, name := range availableOutputs {
+			if name == manualOutputName {
+				return name, nil
+			}
 		}
+		return "", fmt.Errorf("manually specified output layer '%s' not found in model %s.\n\n"+
+			"Available output layers: %v\n\n"+
+			"To fix this:\n"+
+			"1. Inspect your model architecture at https://netron.app by uploading your model.onnx file.\n"+
+			"2. Find the Name of the output node you wish to use (usually the last Layer or a pooling Layer).\n"+
+			"3. Update your semango.yml: embedding.onnx_output_name: \"<name>\"",
+			manualOutputName, modelPath, availableOutputs)
+	}
 
-		// Try to run a small inference to validate the output name actually works
-		err = le.testInferenceWithSession(dynamicSession, outputName)
-		_ = dynamicSession.Destroy()
+	// Priority list for sentence-level or good token-level embeddings.
+	// We avoid "token_embeddings" if anything else is available as per user request.
+	priorities := []string{
+		"sentence_embedding",
+		"pooler_output",
+		"last_hidden_state",
+		"output",
+		"embeddings",
+		"hidden_states",
+	}
 
-		if err == nil {
-			fmt.Printf("DEBUG detectOutputName: SUCCESS with output name: %s\n", outputName)
-			return outputName, nil
+	for _, p := range priorities {
+		for _, name := range availableOutputs {
+			if name == p {
+				fmt.Printf("INFO Detected ONNX output name: %s\n", name)
+				return name, nil
+			}
 		}
-		fmt.Printf("DEBUG detectOutputName: FAILED inference test with output name: %s, error: %v\n", outputName, err)
 	}
 
-	return "", fmt.Errorf("could not detect valid output name for ONNX model")
-}
-
-// testInferenceWithSession tests if inference works with the given session and output name
-func (le *LocalEmbedder) testInferenceWithSession(session *onnxruntime_go.DynamicAdvancedSession, outputName string) error {
-	// Create minimal test inputs
-	batchSize := 1
-	seqLength := 10
-
-	inputShape := onnxruntime_go.NewShape(int64(batchSize), int64(seqLength))
-
-	// Create dummy input data
-	flatInputIDs := make([]int64, batchSize*seqLength)
-	flatAttentionMasks := make([]int64, batchSize*seqLength)
-	flatTokenTypeIDs := make([]int64, batchSize*seqLength)
-	for i := 0; i < batchSize*seqLength; i++ {
-		flatInputIDs[i] = 101 // [CLS] token ID
-		flatAttentionMasks[i] = 1
-		flatTokenTypeIDs[i] = 0 // Default token type
+	// If none of the preferred ones exist, pick the first one from the model that isn't token_embeddings
+	if len(availableOutputs) > 0 {
+		for _, name := range availableOutputs {
+			if name != "token_embeddings" {
+				fmt.Printf("INFO Detected non-priority ONNX output name: %s\n", name)
+				return name, nil
+			}
+		}
 	}
 
-	inputIDsTensor, err := onnxruntime_go.NewTensor(inputShape, flatInputIDs)
-	if err != nil {
-		return fmt.Errorf("failed to create input_ids tensor: %w", err)
-	}
-	defer func() { _ = inputIDsTensor.Destroy() }()
-
-	attentionMasksTensor, err := onnxruntime_go.NewTensor(inputShape, flatAttentionMasks)
-	if err != nil {
-		return fmt.Errorf("failed to create attention_mask tensor: %w", err)
-	}
-	defer func() { _ = attentionMasksTensor.Destroy() }()
-
-	tokenTypeIDsTensor, err := onnxruntime_go.NewTensor(inputShape, flatTokenTypeIDs)
-	if err != nil {
-		return fmt.Errorf("failed to create token_type_ids tensor: %w", err)
-	}
-	defer func() { _ = tokenTypeIDsTensor.Destroy() }()
-
-	// Create output tensor based on output type
-	var outputTensor *onnxruntime_go.Tensor[float32]
-	if outputName == "pooler_output" {
-		// pooler_output gives sentence-level embeddings: [batch_size, hidden_size]
-		outputShape := onnxruntime_go.NewShape(int64(batchSize), int64(le.dimension))
-		outputTensor, err = onnxruntime_go.NewEmptyTensor[float32](outputShape)
-	} else {
-		// token-level outputs: [batch_size, seq_length, hidden_size]
-		outputShape := onnxruntime_go.NewShape(int64(batchSize), int64(seqLength), int64(le.dimension))
-		outputTensor, err = onnxruntime_go.NewEmptyTensor[float32](outputShape)
-	}
-	if err != nil {
-		return fmt.Errorf("failed to create output tensor: %w", err)
-	}
-	defer func() { _ = outputTensor.Destroy() }()
-
-	// Try to run inference
-	err = session.Run(
-		[]onnxruntime_go.Value{inputIDsTensor, attentionMasksTensor, tokenTypeIDsTensor},
-		[]onnxruntime_go.Value{outputTensor},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to run test inference: %w", err)
-	}
-
-	return nil
+	return "", fmt.Errorf("could not automatically detect a suitable output layer for the ONNX model (found: %v).\n\n"+
+		"Note: 'token_embeddings' was found but is insufficient as it requires manual pooling.\n\n"+
+		"Steps to resolve:\n"+
+		"1. Open https://netron.app and upload your model.onnx from: %s\n"+
+		"2. Locate the output nodes and identify which one contains the embeddings.\n"+
+		"3. Explicitly set this name in your semango.yml using the 'onnx_output_name' property under 'embedding'.",
+		availableOutputs, modelPath)
 }
 
 // initONNXSession initializes the ONNX runtime session.
-func (le *LocalEmbedder) initONNXSession(modelDir string) (*onnxruntime_go.AdvancedSession, error) {
+func (le *LocalEmbedder) initONNXSession(modelDir string, outputName string) (*onnxruntime_go.DynamicAdvancedSession, error) {
 	modelPath := filepath.Join(modelDir, "model.onnx")
 	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("ONNX model file not found: %s", modelPath)
 	}
 
-	// Initialize ONNX Runtime environment if not already done
-	if !onnxruntime_go.IsInitialized() {
-		libPath, err := ortlib.EnsureSharedLibrary()
-		if err != nil {
-			return nil, fmt.Errorf("failed to prepare onnxruntime library: %w", err)
+	// Get model info to determine input names and output pooling
+	inputsInfo, outputsInfo, err := onnxruntime_go.GetInputOutputInfo(modelPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get model info: %w", err)
+	}
+
+	inputNames := make([]string, 0, len(inputsInfo))
+	for _, info := range inputsInfo {
+		inputNames = append(inputNames, info.Name)
+	}
+	le.inputNames = inputNames
+
+	// Determine if output is pooled
+	for _, info := range outputsInfo {
+		if info.Name == outputName {
+			if len(info.Dimensions) == 2 {
+				le.outputIsPooled = true
+			}
+			break
 		}
-		onnxruntime_go.SetSharedLibraryPath(libPath)
-
-		err = onnxruntime_go.InitializeEnvironment()
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize ONNX runtime: %w", err)
-		}
 	}
 
-	// Create session options
-	options, err := onnxruntime_go.NewSessionOptions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create session options: %w", err)
-	}
-	defer func() { _ = options.Destroy() }()
-
-	// Create dummy input and output tensors for session initialization
-	// We'll use dynamic session later for actual inference
-	inputShape := onnxruntime_go.NewShape(1, int64(le.maxLength))
-	outputShape := onnxruntime_go.NewShape(1, int64(le.maxLength), int64(le.dimension))
-
-	inputTensor, err := onnxruntime_go.NewEmptyTensor[int64](inputShape)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create input tensor: %w", err)
-	}
-	defer func() { _ = inputTensor.Destroy() }()
-
-	outputTensor, err := onnxruntime_go.NewEmptyTensor[float32](outputShape)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create output tensor: %w", err)
-	}
-	defer func() { _ = outputTensor.Destroy() }()
-
-	// Create session
-	session, err := onnxruntime_go.NewAdvancedSession(
+	// Create dynamic session
+	session, err := onnxruntime_go.NewDynamicAdvancedSession(
 		modelPath,
-		[]string{"input_ids", "attention_mask"},
-		[]string{"last_hidden_state"},
-		[]onnxruntime_go.Value{inputTensor, inputTensor}, // Use same tensor for both inputs
-		[]onnxruntime_go.Value{outputTensor},
-		options,
+		inputNames,
+		[]string{outputName},
+		nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create ONNX session: %w", err)
+		return nil, fmt.Errorf("failed to create dynamic ONNX session: %w", err)
 	}
 
 	return session, nil
@@ -694,110 +664,93 @@ func (le *LocalEmbedder) runInference(inputIDs, attentionMasks [][]int64) ([][][
 	batchSize := len(inputIDs)
 	seqLength := len(inputIDs[0])
 
-	// Create input tensors
+	// Create input tensors for each expected input
 	inputShape := onnxruntime_go.NewShape(int64(batchSize), int64(seqLength))
+	inputValues := make([]onnxruntime_go.Value, 0, len(le.inputNames))
 
-	// Flatten input arrays
-	flatInputIDs := make([]int64, batchSize*seqLength)
-	flatAttentionMasks := make([]int64, batchSize*seqLength)
-	flatTokenTypeIDs := make([]int64, batchSize*seqLength)
-
-	for i := 0; i < batchSize; i++ {
-		for j := 0; j < seqLength; j++ {
-			flatInputIDs[i*seqLength+j] = inputIDs[i][j]
-			flatAttentionMasks[i*seqLength+j] = attentionMasks[i][j]
-			flatTokenTypeIDs[i*seqLength+j] = 0 // Default token type
+	for _, name := range le.inputNames {
+		var tensor *onnxruntime_go.Tensor[int64]
+		var err error
+		if name == "input_ids" {
+			flat := make([]int64, batchSize*seqLength)
+			for i := 0; i < batchSize; i++ {
+				copy(flat[i*seqLength:], inputIDs[i])
+			}
+			tensor, err = onnxruntime_go.NewTensor(inputShape, flat)
+		} else if name == "attention_mask" {
+			flat := make([]int64, batchSize*seqLength)
+			for i := 0; i < batchSize; i++ {
+				copy(flat[i*seqLength:], attentionMasks[i])
+			}
+			tensor, err = onnxruntime_go.NewTensor(inputShape, flat)
+		} else if name == "token_type_ids" {
+			flat := make([]int64, batchSize*seqLength)
+			// Default to all 0s
+			tensor, err = onnxruntime_go.NewTensor(inputShape, flat)
+		} else {
+			// Unknown input, just provide 0s of the same shape
+			flat := make([]int64, batchSize*seqLength)
+			tensor, err = onnxruntime_go.NewTensor(inputShape, flat)
 		}
+		if err != nil {
+			// Cleanup previously created tensors
+			for _, v := range inputValues {
+				_ = v.Destroy()
+			}
+			return nil, fmt.Errorf("failed to create input tensor %s: %w", name, err)
+		}
+		inputValues = append(inputValues, tensor)
 	}
-
-	inputIDsTensor, err := onnxruntime_go.NewTensor(inputShape, flatInputIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create input_ids tensor: %w", err)
-	}
-	defer func() { _ = inputIDsTensor.Destroy() }()
-
-	attentionMasksTensor, err := onnxruntime_go.NewTensor(inputShape, flatAttentionMasks)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create attention_mask tensor: %w", err)
-	}
-	defer func() { _ = attentionMasksTensor.Destroy() }()
-
-	tokenTypeIDsTensor, err := onnxruntime_go.NewTensor(inputShape, flatTokenTypeIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token_type_ids tensor: %w", err)
-	}
-	defer func() { _ = tokenTypeIDsTensor.Destroy() }()
-
-	// Create dynamic session using the detected output name
-	modelPath := le.modelPath + "/model.onnx"
-	fmt.Printf("DEBUG runInference: trying model path: %s with output name: %s\n", modelPath, le.outputName)
-
-	dynamicSession, err := onnxruntime_go.NewDynamicAdvancedSession(
-		modelPath,
-		[]string{"input_ids", "attention_mask", "token_type_ids"},
-		[]string{le.outputName},
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create dynamic session: %w", err)
-	}
-	defer func() { _ = dynamicSession.Destroy() }()
+	defer func() {
+		for _, v := range inputValues {
+			if v != nil {
+				_ = v.Destroy()
+			}
+		}
+	}()
 
 	// Create output tensor based on output type
-	var outputTensor *onnxruntime_go.Tensor[float32]
-	if le.outputName == "pooler_output" {
-		// pooler_output gives sentence-level embeddings: [batch_size, hidden_size]
-		outputShape := onnxruntime_go.NewShape(int64(batchSize), int64(le.dimension))
-		outputTensor, err = onnxruntime_go.NewEmptyTensor[float32](outputShape)
+	var outputShape onnxruntime_go.Shape
+	if le.outputIsPooled {
+		outputShape = onnxruntime_go.NewShape(int64(batchSize), int64(le.dimension))
 	} else {
-		// token-level outputs: [batch_size, seq_length, hidden_size]
-		outputShape := onnxruntime_go.NewShape(int64(batchSize), int64(seqLength), int64(le.dimension))
-		outputTensor, err = onnxruntime_go.NewEmptyTensor[float32](outputShape)
+		outputShape = onnxruntime_go.NewShape(int64(batchSize), int64(seqLength), int64(le.dimension))
 	}
+
+	outputTensor, err := onnxruntime_go.NewEmptyTensor[float32](outputShape)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output tensor: %w", err)
 	}
 	defer func() { _ = outputTensor.Destroy() }()
 
 	// Run inference
-	err = dynamicSession.Run(
-		[]onnxruntime_go.Value{inputIDsTensor, attentionMasksTensor, tokenTypeIDsTensor},
-		[]onnxruntime_go.Value{outputTensor},
-	)
+	err = le.session.Run(inputValues, []onnxruntime_go.Value{outputTensor})
 	if err != nil {
-		return nil, fmt.Errorf("failed to run inference: %w", err)
+		return nil, fmt.Errorf("inference failed: %w", err)
 	}
 
-	// Get output data
+	// Get output data and reshape
 	outputData := outputTensor.GetData()
+	result := make([][][]float32, batchSize)
 
-	if le.outputName == "pooler_output" {
-		// pooler_output gives sentence-level embeddings directly
-		// Reshape to [batch_size, 1, hidden_size] for compatibility with pooling code
-		result := make([][][]float32, batchSize)
+	if le.outputIsPooled {
 		for i := 0; i < batchSize; i++ {
-			result[i] = make([][]float32, 1) // Single "token" representing the sentence
+			result[i] = make([][]float32, 1)
 			result[i][0] = make([]float32, le.dimension)
-			for k := 0; k < le.dimension; k++ {
-				result[i][0][k] = outputData[i*le.dimension+k]
-			}
+			copy(result[i][0], outputData[i*le.dimension:(i+1)*le.dimension])
 		}
-		return result, nil
 	} else {
-		// Reshape output data back to [batch_size, seq_length, hidden_size]
-		result := make([][][]float32, batchSize)
 		for i := 0; i < batchSize; i++ {
 			result[i] = make([][]float32, seqLength)
 			for j := 0; j < seqLength; j++ {
 				result[i][j] = make([]float32, le.dimension)
-				for k := 0; k < le.dimension; k++ {
-					idx := i*seqLength*le.dimension + j*le.dimension + k
-					result[i][j][k] = outputData[idx]
-				}
+				start := (i*seqLength + j) * le.dimension
+				copy(result[i][j], outputData[start:start+le.dimension])
 			}
 		}
-		return result, nil
 	}
+
+	return result, nil
 }
 
 // applyPooling applies pooling strategy to token embeddings.
@@ -806,8 +759,8 @@ func (le *LocalEmbedder) applyPooling(outputs [][][]float32, attentionMasks [][]
 	embeddings := make([][]float32, batchSize)
 
 	for i := 0; i < batchSize; i++ {
-		// If we used pooler_output, we already have sentence-level embeddings
-		if le.outputName == "pooler_output" && len(outputs[i]) == 1 {
+		// If the output is already pooled, just use it
+		if le.outputIsPooled && len(outputs[i]) == 1 {
 			embeddings[i] = outputs[i][0]
 		} else if le.poolingConfig.PoolingModeCLSToken {
 			// Use CLS token (first token)

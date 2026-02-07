@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/omarkamali/semango/internal/api"
+	"github.com/omarkamali/semango/internal/cli"
 	"github.com/omarkamali/semango/internal/config"
 	"github.com/omarkamali/semango/internal/ingest"
 	"github.com/omarkamali/semango/internal/pipeline"
@@ -336,6 +337,8 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(cli.NewInstallCmd(version))
+	rootCmd.AddCommand(cli.NewModelsCmd())
 	initCmd.Flags().StringP("file", "f", config.DefaultConfigPath, "Path to write the configuration file")
 	rootCmd.PersistentFlags().StringP("config", "c", config.DefaultConfigPath, "Path to the configuration file")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose logging")
