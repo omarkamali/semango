@@ -17,6 +17,7 @@ import (
 	"github.com/omarkamali/semango/internal/cli"
 	"github.com/omarkamali/semango/internal/config"
 	"github.com/omarkamali/semango/internal/ingest"
+	"github.com/omarkamali/semango/internal/mcp"
 	"github.com/omarkamali/semango/internal/pipeline"
 	"github.com/omarkamali/semango/internal/search"
 	"github.com/omarkamali/semango/internal/storage"
@@ -36,7 +37,7 @@ var AppConfig *config.Config // Global config instance
 
 var rootCmd = &cobra.Command{
 	Use:   "semango",
-	Short: "Semango is a semantic search engine.",
+	Short: "🥭 Semango is a semantic search engine.",
 	Long:  `A fast and flexible semantic search engine capable of indexing and searching various file types.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		_ = util.Logger // Ensure logger is initialized
@@ -88,7 +89,7 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		slog.Info("Welcome to Semango! Use -h or --help for available commands.")
+		slog.Info("Welcome to 🥭 Semango! Use -h or --help for available commands.")
 	},
 }
 
@@ -347,6 +348,48 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+var mcpCmd = &cobra.Command{
+	Use:   "mcp",
+	Short: "Model Context Protocol (MCP) server commands.",
+	Long:  `Start an MCP server to allow LLMs to use 🥭 Semango as a search tool.`,
+}
+
+var mcpStdioCmd = &cobra.Command{
+	Use:   "stdio",
+	Short: "Start MCP server using stdin/stdout transport.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if AppConfig == nil {
+			return util.NewError("Configuration not loaded. Pass --config path.")
+		}
+		searcher, err := search.NewSearcher(AppConfig)
+		if err != nil {
+			return util.WrapError(err, "Failed to initialize searcher for MCP")
+		}
+		srv := mcp.NewServer(AppConfig, searcher)
+		return srv.ServeStdio()
+	},
+}
+
+var mcpSSECmd = &cobra.Command{
+	Use:   "sse",
+	Short: "Start MCP server using SSE transport.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if AppConfig == nil {
+			return util.NewError("Configuration not loaded. Pass --config path.")
+		}
+		port, _ := cmd.Flags().GetInt("port")
+		host, _ := cmd.Flags().GetString("host")
+		addr := fmt.Sprintf("%s:%d", host, port)
+
+		searcher, err := search.NewSearcher(AppConfig)
+		if err != nil {
+			return util.WrapError(err, "Failed to initialize searcher for MCP")
+		}
+		srv := mcp.NewServer(AppConfig, searcher)
+		return srv.ServeSSE(addr)
+	},
+}
+
 func init() {
 	// Logger is initialized by importing internal/util
 	rootCmd.AddCommand(initCmd)
@@ -354,15 +397,24 @@ func init() {
 	indexCmd.AddCommand(indexStatsCmd)
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(mcpCmd)
+	mcpCmd.AddCommand(mcpStdioCmd)
+	mcpCmd.AddCommand(mcpSSECmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(cli.NewInstallCmd(version))
 	rootCmd.AddCommand(cli.NewModelsCmd())
+
+	mcpSSECmd.Flags().IntP("port", "p", 8080, "Port to listen on")
+	mcpSSECmd.Flags().StringP("host", "H", "localhost", "Host to listen on")
+
 	initCmd.Flags().StringP("file", "f", config.DefaultConfigPath, "Path to write the configuration file")
 	rootCmd.PersistentFlags().StringP("config", "c", config.DefaultConfigPath, "Path to the configuration file")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose logging")
 }
 
 func Execute() {
+	rootCmd.SilenceErrors = true
+	rootCmd.SilenceUsage = true
 	if err := rootCmd.Execute(); err != nil {
 		// Cobra already prints the error, but we log it with our structured format.
 		// Check if it's already a SemangoError, if not, wrap it for consistent logging.

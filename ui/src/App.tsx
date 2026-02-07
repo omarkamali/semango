@@ -121,7 +121,7 @@ function App() {
 				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
 					<div className="flex items-center space-x-4">
 						<span className="text-2xl font-bold">🥭</span>
-						<h1 className="text-xl font-bold">Semango</h1>
+						<h1 className="text-xl font-bold">🥭 Semango</h1>
 					</div>
 					<div className="flex items-center space-x-2">
 						<button
@@ -244,7 +244,7 @@ function App() {
 				{!showApiDocs && !query && results.length === 0 && (
 					<div className="max-w-2xl mx-auto text-center py-12">
 						<div className="text-4xl font-bold mb-4">🥭</div>
-						<h2 className="text-2xl font-bold mb-4">Welcome to Semango Search</h2>
+						<h2 className="text-2xl font-bold mb-4">Welcome to Semango Search 🥭</h2>
 						<p className="text-muted-foreground mb-8">
 							Search through your knowledge base using semantic search.
 							Find documents, code, images, and more with natural language queries.

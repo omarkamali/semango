@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -12,7 +13,9 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/schollz/progressbar/v3"
 	ortlib "github.com/omarkamali/semango/internal/onnxruntime"
 	"github.com/omarkamali/semango/internal/util"
 	"github.com/omarkamali/semango/pkg/semango"
@@ -33,6 +36,7 @@ type LocalEmbedder struct {
 	poolingConfig  *PoolingConfig
 	outputName     string // Cached output name for the ONNX model
 	outputIsPooled bool   // Whether the output is already pooled (sentence-level)
+	enableGPU      bool   // Whether GPU is enabled
 	mu             sync.RWMutex
 }
 
@@ -44,6 +48,7 @@ type LocalEmbedderConfig struct {
 	MaxLength  int    // Maximum sequence length
 	ModelName  string // Specific model name (e.g., "all-MiniLM-L6-v2-onnx")
 	OutputName string // Manually specified output name
+	EnableGPU  bool   // Whether to enable GPU acceleration
 }
 
 // Tokenizer handles text tokenization for sentence transformers.
@@ -102,6 +107,7 @@ func NewLocalEmbedder(config LocalEmbedderConfig) (*LocalEmbedder, error) {
 	embedder := &LocalEmbedder{
 		batchSize: config.BatchSize,
 		maxLength: config.MaxLength,
+		enableGPU: config.EnableGPU,
 	}
 
 	modelDir, modelOnnxPath, err := embedder.resolveModelLocation(config.ModelPath, config.CacheDir)
@@ -197,20 +203,14 @@ func (le *LocalEmbedder) resolveModelLocation(modelRef, cacheDir string) (string
 	}
 
 	modelDir := filepath.Join(cacheDir, filepath.FromSlash(modelRef))
-	if info, err := os.Stat(modelDir); err == nil && info.IsDir() {
-		onnxPath, err := findOnnxFileInDir(modelDir)
-		if err == nil {
-			return modelDir, onnxPath, nil
-		}
+	if onnxPath, ok := isValidModelDir(modelDir); ok {
+		return modelDir, onnxPath, nil
 	}
 
 	// Legacy directory check (underscore instead of slashes)
 	legacyModelDir := filepath.Join(cacheDir, strings.ReplaceAll(modelRef, "/", "_"))
-	if info, err := os.Stat(legacyModelDir); err == nil && info.IsDir() {
-		onnxPath, err := findOnnxFileInDir(legacyModelDir)
-		if err == nil {
-			return legacyModelDir, onnxPath, nil
-		}
+	if onnxPath, ok := isValidModelDir(legacyModelDir); ok {
+		return legacyModelDir, onnxPath, nil
 	}
 
 	repoFiles, err := listHuggingFaceRepoFiles(modelRef)
@@ -222,6 +222,8 @@ func (le *LocalEmbedder) resolveModelLocation(modelRef, cacheDir string) (string
 		return "", "", fmt.Errorf("no .onnx files found in Hugging Face repo: %s", modelRef)
 	}
 
+	// If directory exists but is invalid, we might want to clean it up or overwrite
+	// For now, we'll just let MkdirAll and downloadHuggingFaceFiles handle it.
 	if err := os.MkdirAll(modelDir, 0755); err != nil {
 		return "", "", fmt.Errorf("failed to create model directory: %w", err)
 	}
@@ -237,6 +239,35 @@ func (le *LocalEmbedder) resolveModelLocation(modelRef, cacheDir string) (string
 	}
 
 	return modelDir, onnxPath, nil
+}
+
+func isValidModelDir(dir string) (string, bool) {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return "", false
+	}
+
+	onnxPath, err := findOnnxFileInDir(dir)
+	if err != nil {
+		return "", false
+	}
+
+	// Check for tokenizer.json or vocab.txt
+	tokenizerJson := filepath.Join(dir, "tokenizer.json")
+	vocabTxt := filepath.Join(dir, "vocab.txt")
+
+	hasTokenizer := false
+	if info, err := os.Stat(tokenizerJson); err == nil && info.Size() > 0 {
+		hasTokenizer = true
+	} else if info, err := os.Stat(vocabTxt); err == nil && info.Size() > 0 {
+		hasTokenizer = true
+	}
+
+	if !hasTokenizer {
+		return "", false
+	}
+
+	return onnxPath, true
 }
 
 func resolveLocalModelPath(localPath string) (string, string, error) {
@@ -335,7 +366,7 @@ func (le *LocalEmbedder) downloadONNXModel(modelName, cacheDir string) (string, 
 }
 
 // downloadFile downloads a file from URL to local path.
-func (le *LocalEmbedder) downloadFile(url, localPath string) error {
+func (le *LocalEmbedder) downloadFile(url, localPath, description string) error {
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
@@ -352,7 +383,22 @@ func (le *LocalEmbedder) downloadFile(url, localPath string) error {
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, resp.Body)
+	bar := progressbar.NewOptions64(
+		resp.ContentLength,
+		progressbar.OptionSetDescription(description),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(20),
+		progressbar.OptionThrottle(65*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionOnCompletion(func() {
+			fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+	)
+
+	_, err = io.Copy(io.MultiWriter(out, bar), resp.Body)
 	return err
 }
 
@@ -445,7 +491,8 @@ func (le *LocalEmbedder) downloadHuggingFaceFiles(modelID, modelDir string, repo
 			return fmt.Errorf("failed to create directory for %s: %w", file, err)
 		}
 
-		if err := le.downloadFile(url, localPath); err != nil {
+		desc := fmt.Sprintf("Downloading %s ", filepath.Base(file))
+		if err := le.downloadFile(url, localPath, desc); err != nil {
 			return err
 		}
 	}
@@ -636,7 +683,7 @@ func (le *LocalEmbedder) detectOutputName(modelOnnxPath string, manualOutputName
 	for _, p := range priorities {
 		for _, name := range availableOutputs {
 			if name == p {
-				fmt.Printf("INFO Detected ONNX output name: %s\n", name)
+				slog.Debug("Detected ONNX output name", "name", name)
 				return name, nil
 			}
 		}
@@ -646,7 +693,7 @@ func (le *LocalEmbedder) detectOutputName(modelOnnxPath string, manualOutputName
 	if len(availableOutputs) > 0 {
 		for _, name := range availableOutputs {
 			if name != "token_embeddings" {
-				fmt.Printf("INFO Detected non-priority ONNX output name: %s\n", name)
+				slog.Debug("Detected non-priority ONNX output name", "name", name)
 				return name, nil
 			}
 		}
@@ -689,14 +736,36 @@ func (le *LocalEmbedder) initONNXSession(modelOnnxPath string, outputName string
 		}
 	}
 
+	var options *onnxruntime_go.SessionOptions
+	if le.enableGPU {
+		var err error
+		options, err = onnxruntime_go.NewSessionOptions()
+		if err != nil {
+			slog.Warn("Failed to create ONNX session options for GPU, falling back to CPU", "error", err)
+		} else {
+			// Try enabling CUDA
+			err = options.AppendExecutionProviderCUDA()
+			if err != nil {
+				slog.Warn("GPU requested but CUDA execution provider failed to initialize, falling back to CPU", "error", err)
+				options.Destroy()
+				options = nil
+			} else {
+				slog.Info("GPU acceleration (CUDA) enabled for ONNX session")
+			}
+		}
+	}
+
 	// Create dynamic session
 	session, err := onnxruntime_go.NewDynamicAdvancedSession(
 		modelOnnxPath,
 		inputNames,
 		[]string{outputName},
-		nil,
+		options,
 	)
 	if err != nil {
+		if options != nil {
+			options.Destroy()
+		}
 		return nil, fmt.Errorf("failed to create dynamic ONNX session: %w", err)
 	}
 

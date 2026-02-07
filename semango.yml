@@ -6,9 +6,11 @@ embedding:
   provider: local
   # Model name for the selected provider (Hugging Face ID or direct path for local provider)
   model: onnx-models/all-MiniLM-L6-v2-onnx
-  onnx_output_name: "[optional_pooling_layer]" # if not recognized by semango
+  # onnx_output_name: "[optional_pooling_layer]" # if not recognized by semango, sentence_embedding for example
   batch_size: 48
   concurrent: 4
+  # Use GPU acceleration for local embeddings if available (CUDA) - defaults to true
+  # gpu: true
   # Directory where models are cached
   model_cache_dir: "${SEMANGO_MODEL_DIR:=~/.cache/semango}"
   # For openai provider:
@@ -25,12 +27,12 @@ lexical:
   bm25_b: 0.75
 
 # Reranker settings
-reranker:
-  enabled: false
-  provider: openai
-  model: rerank-english-v3.0
-  batch_size: 32
-  per_request_override: true
+# reranker:
+#   enabled: false
+#   provider: openai
+#   model: rerank-english-v3.0
+#   batch_size: 32
+#   per_request_override: true
   # For openai provider:
   # api_key: "your-api-key"
   # api_key_env: "OPENAI_API_KEY"

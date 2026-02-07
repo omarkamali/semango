@@ -1,62 +1,29 @@
-# Local Embedder Guide
+# Local Embedder Guide (ONNX)
 
-See also: [Semango Guide](./SEMANGO_GUIDE.md) for Quickstart, configuration, operations, and advanced usage.
+This guide is kept for repository readers. The docs site has the updated version:
 
-The Local Embedder allows you to use sentence transformer models locally without requiring external API calls. This is ideal for:
+- https://semango.org/guide/embeddings-local
 
-- **Privacy**: Keep your data completely local
-- **Cost**: No API fees for embedding generation
-- **Offline usage**: Work without internet connectivity
-- **Custom models**: Use specialized models for your domain
+Semango’s local embedder runs **ONNX models** via ONNX Runtime. It does **not** use SentenceTransformers directly.
 
-## Supported Models
-
-The local embedder supports popular sentence transformer models from Hugging Face:
-
-### General Purpose Models
-- `sentence-transformers/all-MiniLM-L6-v2` - Fast, lightweight (22MB)
-- `sentence-transformers/all-mpnet-base-v2` - Balanced performance (420MB)
-- `sentence-transformers/all-distilroberta-v1` - Good performance (290MB)
-
-### Multilingual Models
-- `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
-- `sentence-transformers/paraphrase-multilingual-mpnet-base-v2`
-
-### Domain-Specific Models
-- `BAAI/bge-small-en-v1.5` - Optimized for retrieval (130MB)
-- `BAAI/bge-base-en-v1.5` - Better quality retrieval (440MB)
-- `BAAI/bge-large-en-v1.5` - Best quality retrieval (1.3GB)
-
-### E5 Models (Microsoft)
-- `intfloat/e5-small-v2` - Efficient (130MB)
-- `intfloat/e5-base-v2` - Balanced (440MB)
-- `intfloat/e5-large-v2` - High quality (1.3GB)
-
-## Configuration
-
-### Basic Configuration
+## Basic configuration
 
 ```yaml
 embedding:
   provider: "local"
-  model: "sentence-transformers/all-MiniLM-L6-v2"
-  batch_size: 32
+  model: "onnx-models/bge-small-en-v1.5-onnx"
+  batch_size: 48
 ```
 
-### Advanced Configuration
+## Model cache
 
-```yaml
-embedding:
-  provider: "local"
-  model: "BAAI/bge-base-en-v1.5"
-  model_cache_dir: "~/.cache/semango"          # Where to store downloaded models
-  batch_size: 16                              # Adjust based on your memory
-  max_length: 512                             # Maximum token length
+Models are cached under:
+
+```
+~/.cache/semango/models
 ```
 
-You can also set the model cache directory using the `SEMANGO_MODEL_DIR` environment variable, which is the default location Semango looks for if `model_cache_dir` is not explicitly set in the config.
-
-### Using Local Model Files
+Use `semango models search|download|list` to manage local ONNX models.
 
 If you have already downloaded a model or want to use a custom model:
 

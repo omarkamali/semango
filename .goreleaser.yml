@@ -44,8 +44,8 @@ builds:
         goarch: amd64
         env:
           - CC=gcc
-          - CGO_LDFLAGS=-L/usr/local/lib -lfaiss_c -lonnxruntime
-          - CGO_CPPFLAGS=-I/usr/local/include
+          - CGO_LDFLAGS=-L/usr/local/lib -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic -lstdc++ -lgomp -lopenblas -lpthread -lm -lonnxruntime
+          - CGO_CPPFLAGS=-I/usr/local/include -I.
       - goos: linux
         goarch: arm64
         env:

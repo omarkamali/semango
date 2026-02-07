@@ -1,20 +1,16 @@
-# Tabular Data Ingestion (CSV / JSON* / Parquet)
+# Tabular Data Ingestion (CSV / JSON / JSONL)
 
-See also: [Semango Guide](./SEMANGO_GUIDE.md) for Quickstart, configuration, operations, and advanced usage.
+See also: https://semango.org/guide/ingestion
 
-Semango 1.1 adds **native support for structured, row-oriented data sources**.  The
-same search pipeline now works across code, free-text, *and* analytics files
-without extra plugins.
+Semango currently supports **row-oriented CSV and JSON ingestion**. Parquet and SQLite are not implemented in the current codebase.
 
 ## Supported formats
 
 | Format | Extensions | Reader backend |
 |--------|------------|----------------|
-| CSV             | `.csv`, `.tsv`           | Go std-lib `encoding/csv` (delimiter configurable)
+| CSV             | `.csv`, `.tsv`   | Go std-lib `encoding/csv` (delimiter configurable)
 | JSON array      | `.json`          | streaming `json.Decoder`
 | JSON Lines      | `.jsonl`         | `bufio.Scanner`
-| Apache Parquet  | `.parquet`       | `github.com/xitongsys/parquet-go` & `parquet-go-source`
-| SQLite          | `.sqlite`, `.db` — each table is treated as its own "file" internally; loader streams rows via the `modernc.org/sqlite` driver so no CGO is needed.
 
 > **Tip:** proprietary column separators (TSV, pipe-delimited, …) can be handled
 > via a 4-line custom loader that wraps the CSV reader and plugs into the same
@@ -53,20 +49,13 @@ tabular:
 ```
 
 When a file exceeds the cap Semango samples rows (either random reservoir or
-simple stratified) and *always* adds two synthetic vectors per file:
-
-* **file-level summary** – "orders_2025.parquet with 2.1 M rows, columns …".
-* **schema** – embedding of column names/types only.
-
-These vectors anchor recall for questions about the dataset itself.
-
+simple stratified).
 ## Query examples
 
 ```
-curl -s -XPOST /search -d '{
-  "query": "rows where payment_status \u003d failed", 
-  "meta_filters": {"col.payment_status": "failed"}
-}' | jq .[0]
+curl -s -XPOST /api/v1/search -d '{
+  "query": "rows where payment_status = failed"
+}' | jq .results[0]
 ```
 
 Hybrid RRF fuses BM25 hits on the keyword filter with semantic neighbours of

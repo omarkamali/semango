@@ -176,11 +176,29 @@ go test ./internal/search/...
 
 ## Release Process
 
-Releases are automated via GitHub Actions when tags are pushed:
+Releases are managed with Prepress (changelog-first) and published via GitHub Actions.
+
+**Preferred (CI-driven) flow**
+
+1) Add changelog notes as you work:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+pps note "Added <thing>" -s Added
+pps note "Fixed <bug>" -s Fixed
+```
+
+2) When you're ready to ship, run the GitHub Action: **Prepare Release (Prepress)**.
+   - Choose `patch`, `minor`, `major`, or an explicit version.
+   - The workflow runs `pps bump`, commits the changelog update, creates a `vX.Y.Z` tag, and pushes both.
+
+3) Pushing the tag triggers the existing release workflow, which builds artifacts and publishes the GitHub Release.
+
+**Local flow (equivalent)**
+
+```bash
+pip install prepress
+pps bump minor
+git push --follow-tags
 ```
 
 ## Questions?

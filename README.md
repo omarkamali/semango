@@ -4,16 +4,18 @@
 [![Go Version](https://img.shields.io/badge/go-1.23-blue.svg)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Semango** is a hybrid search engine that combines lexical (BM25) and semantic (vector) search. Index your codebase, documentation, or knowledge base and search with natural language queries.
+**🥭 Semango** is a hybrid search engine that combines lexical (BM25) and semantic (vector) search. Index your codebase and docs and search with natural language queries.
+
+Website & docs: https://semango.org
 
 ## Features
 
-- **Hybrid Search**: Combines BM25 lexical search (via Bleve) with vector similarity search (via FAISS)
-- **Multi-format Ingestion**: Markdown, code files, PDFs, images, and tabular data (CSV, JSON, Parquet, SQLite)
-- **Embedding Providers**: OpenAI API or local ONNX models (e.g., all-MiniLM-L6-v2)
+- **Hybrid Search**: Combines BM25 lexical search (Bleve) with vector similarity (FAISS)
+- **Multi-format Ingestion**: Markdown/text, code (plain text), PDFs, CSV/JSON/JSONL
+- **Embedding Providers**: OpenAI-compatible API or local ONNX models
+- **GPU Acceleration**: Built-in support for CUDA-accelerated local embeddings
 - **Web UI**: Embedded React-based search interface with dark mode
-- **REST API**: Token-authenticated HTTP API for programmatic access
-- **MCP Support**: Model Context Protocol integration for AI assistants
+- **REST API**: Lightweight HTTP API for programmatic access
 - **Single Binary**: Self-contained executable with embedded UI assets
 
 ## Installation
@@ -49,13 +51,10 @@ make build
 # 1. Initialize configuration
 semango init
 
-# 2. Set API tokens (for authentication)
-export SEMANGO_TOKENS="your-secret-token"
-
-# 3. Index your content
+# 2. Index your content
 semango index
 
-# 4. Start the server
+# 3. Start the server
 semango server
 ```
 
@@ -109,7 +108,7 @@ See [docs/SEMANGO_GUIDE.md](docs/SEMANGO_GUIDE.md) for the complete configuratio
 
 | Variable | Description | Default / Optional |
 |----------|-------------|--------------------|
-| `SEMANGO_TOKENS` | Comma-separated list of valid API tokens | Required for API auth |
+| `SEMANGO_TOKENS` | Comma-separated list of valid API tokens | Parsed but not enforced yet |
 | `OPENAI_API_KEY` | API key to use when `provider: openai` | Used if `api_key` or `api_key_env` not set |
 | `OPENAI_BASE_URL` | Base URL for OpenAI-compatible APIs | Defaults to OpenAI official endpoint |
 | `SEMANGO_ENV_FILE` | Path to `.env` file to load | Defaults to `.env` |
@@ -119,9 +118,11 @@ You can also customize which environment variables Semango looks for by setting 
 
 ## Documentation
 
-- [Configuration Guide](docs/SEMANGO_GUIDE.md) - Full configuration reference
+- https://semango.org/guide/
 - [Local Embeddings](docs/LOCAL_EMBEDDER.md) - Using local ONNX models
-- [Tabular Data](docs/tabular.md) - Ingesting CSV, JSON, Parquet files
+- [Tabular Data](docs/tabular.md) - Ingesting CSV/JSON/JSONL files
+
+Online: https://semango.org
 
 ## Contributing
 
@@ -133,4 +134,4 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## Author
 
-**Omar Kamali** - [semango@omarkama.li](mailto:semango@omarkama.li) | [X / Twitter](https://x.com/omarkamali)
+Built by **Omar Kamali** (https://omarkamali.com) — Omneity Labs (https://omneitylabs.com)

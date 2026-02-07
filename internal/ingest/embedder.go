@@ -59,6 +59,7 @@ func NewEmbedderFromConfig(cfg config.EmbeddingConfig) (Embedder, error) {
 			BatchSize:  cfg.BatchSize,
 			MaxLength:  512, // Default max length
 			OutputName: cfg.OnnxOutputName,
+			EnableGPU:  cfg.GPU,
 		}
 		// Validate configuration
 		if err := ValidateModelConfig(localCfg); err != nil {

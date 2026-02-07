@@ -23,12 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Hybrid Search Engine**: Combined lexical (BM25 via Bleve) and semantic (FAISS vector) search
-- **Multi-format Ingestion**: Support for Markdown, Go, PDF, images, and code files
-- **Tabular Data Support**: CSV, TSV, JSON, JSONL, Parquet, and SQLite ingestion
+- **Multi-format Ingestion**: Markdown/text, code (plain text), PDFs, CSV/JSON/JSONL
 - **Embedding Providers**: OpenAI and local ONNX model support
-- **HTTP API**: RESTful search API with token-based authentication
+- **HTTP API**: RESTful search API
 - **Embedded Web UI**: React-based search interface with dark mode
-- **MCP Support**: Model Context Protocol integration
 - **Configuration**: YAML-based configuration with CUE schema validation
 - **Environment Expansion**: Support for `${VAR:=default}` and `~` in config paths
 - **CLI Commands**: `init`, `index`, `server` commands

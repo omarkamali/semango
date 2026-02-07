@@ -23,6 +23,7 @@ package config
 	concurrent:       int & >=1 | *4          // Default: 4
 	model_cache_dir:  string | *"~/.cache/semango" // Default added to satisfy concreteness
 	onnx_output_name?: string // Optional
+	gpu?:              bool | *true
 	api_key?:         string
 	api_key_env?:     string
 	base_url?:        string

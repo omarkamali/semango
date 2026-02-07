@@ -7,7 +7,13 @@ UI_DIST_DIR=$(UI_DIR)/dist
 EMBED_UI_DIR=internal/api/ui
 
 # Version info
-VERSION ?= $(shell cat VERSION 2>/dev/null || echo "dev")
+# Prefer the latest git tag (Go best practice; also what Prepress uses),
+# then fall back to VERSION file for source archives, else "dev".
+VERSION ?= $(shell \
+	TAG=$$(git describe --tags --abbrev=0 2>/dev/null); \
+	if [ -n "$$TAG" ]; then echo "$$TAG" | sed 's/^v//'; \
+	elif [ -f VERSION ]; then cat VERSION; \
+	else echo "dev"; fi)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)

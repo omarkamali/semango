@@ -42,6 +42,7 @@ type EmbeddingConfig struct {
 	Concurrent     int    `json:"concurrent" yaml:"concurrent" cue:"concurrent"`
 	ModelCacheDir  string `json:"model_cache_dir" yaml:"model_cache_dir" cue:"model_cache_dir"`
 	OnnxOutputName string `json:"onnx_output_name" yaml:"onnx_output_name" cue:"onnx_output_name"`
+	GPU            bool   `json:"gpu" yaml:"gpu" cue:"gpu"`
 	APIKey         string `json:"api_key" yaml:"api_key" cue:"api_key"`
 	APIKeyEnv      string `json:"api_key_env" yaml:"api_key_env" cue:"api_key_env"`
 	BaseURL        string `json:"base_url" yaml:"base_url" cue:"base_url"`
@@ -290,6 +291,7 @@ func GetDefaultConfig() *Config {
 			BatchSize:      48,
 			Concurrent:     4,
 			ModelCacheDir:  "${SEMANGO_MODEL_DIR:=~/.cache/semango}",
+			GPU:            true,
 		},
 		Lexical: LexicalConfig{
 			Enabled:   true,
@@ -355,6 +357,8 @@ embedding:
   model: onnx-models/bge-small-en-v1.5-onnx
   batch_size: 48
   concurrent: 4
+  # Use GPU acceleration for local embeddings if available
+  gpu: true
   # Directory where models are cached
   model_cache_dir: "${SEMANGO_MODEL_DIR:=~/.cache/semango}"
   # For openai provider:

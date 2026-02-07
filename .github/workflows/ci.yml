@@ -80,100 +80,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Install System Dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake libopenblas-dev libgflags-dev swig tesseract-ocr libleptonica-dev
-          CUE_VERSION="0.9.2"
-          curl -fsSL "https://github.com/cue-lang/cue/releases/download/v${CUE_VERSION}/cue_v${CUE_VERSION}_linux_amd64.tar.gz" | sudo tar -xz -C /usr/local/bin cue
-
-      - name: Install System Dependencies (macOS)
-        if: matrix.os == 'macos-latest'
-        run: brew install cmake openblas swig tesseract leptonica cue libomp
-
-      - name: Install System Dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          choco install swig cmake -y
-          CUE_VERSION="0.9.2"
-          curl -LO "https://github.com/cue-lang/cue/releases/download/v${CUE_VERSION}/cue_v${CUE_VERSION}_windows_amd64.zip"
-          unzip -o cue_v${CUE_VERSION}_windows_amd64.zip
-          mkdir -p bin
-          mv cue.exe bin/
-          echo "$(pwd)/bin" >> $GITHUB_PATH
-
-      - name: Cache FAISS
-        id: cache-faiss
-        if: matrix.os != 'windows-latest'
-        uses: actions/cache@v4
-        with:
-          path: |
-            libs-static
-            include/faiss
-          key: ${{ matrix.os }}-faiss-${{ env.FAISS_REF }}-v6
-
-      - name: Build FAISS Static (Linux/macOS)
-        if: steps.cache-faiss.outputs.cache-hit != 'true' && matrix.os != 'windows-latest'
-        run: scripts/build_faiss_static.sh
-
-      - name: Install ONNX Runtime (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          mkdir -p libs include/onnxruntime
-          curl -L -o onnx.tgz https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/onnxruntime-linux-x64-${{ env.ONNX_VERSION }}.tgz
-          tar -xzf onnx.tgz
-          cp onnxruntime-linux-x64-${{ env.ONNX_VERSION }}/lib/libonnxruntime.so* libs/
-          cp -r onnxruntime-linux-x64-${{ env.ONNX_VERSION }}/include/* include/onnxruntime/
-          cd libs && ln -sf libonnxruntime.so.${{ env.ONNX_VERSION }} libonnxruntime.so && cd ..
-
-      - name: Install ONNX Runtime (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          mkdir -p libs include/onnxruntime
-          ARCH="$(uname -m)"
-          if [ "$ARCH" = "arm64" ]; then
-            ONNX_PKG="onnxruntime-osx-arm64-${{ env.ONNX_VERSION }}.tgz"
-          else
-            ONNX_PKG="onnxruntime-osx-x64-${{ env.ONNX_VERSION }}.tgz"
-          fi
-          curl -L -o onnx.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/$ONNX_PKG"
-          tar -xzf onnx.tgz
-          ORT_DIR="${ONNX_PKG%.tgz}"
-          cp "$ORT_DIR"/lib/libonnxruntime*.dylib libs/
-          cp -r "$ORT_DIR"/include/* include/onnxruntime/
-          # Ensure generic symlink for the linker
-          cd libs && ln -sf $(ls libonnxruntime.*.dylib | head -n 1) libonnxruntime.dylib && cd ..
-
-      - name: Install ONNX Runtime (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          mkdir -p libs include/onnxruntime
-          curl -L -o onnx.zip https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/onnxruntime-win-x64-${{ env.ONNX_VERSION }}.zip
-          unzip -o onnx.zip
-          cp onnxruntime-win-x64-${{ env.ONNX_VERSION }}/lib/onnxruntime.dll libs/
-          cp onnxruntime-win-x64-${{ env.ONNX_VERSION }}/lib/onnxruntime.lib libs/
-          cp -r onnxruntime-win-x64-${{ env.ONNX_VERSION }}/include/* include/onnxruntime/
-
-      - name: Prepare Embedded ONNX Runtime (Linux/macOS)
-        if: matrix.os != 'windows-latest'
-        run: make onnx-embed
-
-      - name: Prepare Embedded ONNX Runtime (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          mkdir -p internal/onnxruntime/embedded
-          cp -f libs/onnxruntime.dll internal/onnxruntime/embedded/onnxruntime.dll
+          node-version: ${{ env.NODE_VERSION }}
+          faiss-ref: ${{ env.FAISS_REF }}
+          onnx-version: ${{ env.ONNX_VERSION }}
+          os: ${{ matrix.os }}
 
       - name: Download UI artifacts
         uses: actions/download-artifact@v4

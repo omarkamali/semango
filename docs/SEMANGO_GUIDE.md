@@ -1,3 +1,18 @@
+# Semango Guide (Deprecated)
+
+This page is no longer maintained. The structured, up‑to‑date guide lives at:
+
+- https://semango.org/guide/
+
+Recommended starting points:
+
+- https://semango.org/guide/quickstart
+- https://semango.org/guide/configuration
+- https://semango.org/guide/embeddings-local
+
+---
+
+<!--
 # Semango Guide
 
 This guide gives you a progressive path from a minimal setup to a fully featured configuration. It covers:
@@ -458,3 +473,5 @@ plugins:
   - plugins/
   - ../shared/my_custom.so
 ```
+
+-->
