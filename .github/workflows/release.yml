@@ -109,7 +109,7 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --release-notes release-notes.md --ignore-dirty
+          args: release --clean --release-notes release-notes.md --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
