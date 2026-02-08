@@ -70,3 +70,10 @@ tmp/
 *.local.yml 
 
 faiss
+docs/.vitepress/cache
+
+# Release-related temporary files
+onnx.tgz
+onnxruntime-linux-x64-*
+release-notes.md
+include/onnxruntime/core/
