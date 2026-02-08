@@ -1,0 +1,27 @@
+name: 'Build UI'
+description: 'Install UI deps and build the Vite UI'
+
+inputs:
+  node-version:
+    description: 'Node.js version'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'yarn'
+        cache-dependency-path: ui/yarn.lock
+
+    - name: Install UI dependencies
+      shell: bash
+      working-directory: ui
+      run: yarn install --frozen-lockfile
+
+    - name: Build UI
+      shell: bash
+      working-directory: ui
+      run: yarn build

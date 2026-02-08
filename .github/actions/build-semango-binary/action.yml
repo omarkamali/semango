@@ -1,0 +1,89 @@
+name: 'Build Semango Binary'
+description: 'Set up build env, embed UI, and build semango'
+
+inputs:
+  os:
+    description: 'Runner OS (ubuntu-latest, macos-latest, windows-latest)'
+    required: true
+  go-version:
+    description: 'Go version'
+    required: true
+  node-version:
+    description: 'Node version'
+    required: true
+  faiss-ref:
+    description: 'FAISS git ref'
+    required: true
+  onnx-version:
+    description: 'ONNX Runtime version'
+    required: true
+  version:
+    description: 'Semango version (without leading v)'
+    required: true
+  ui-artifact-name:
+    description: 'Artifact name containing built UI dist'
+    required: false
+    default: 'ui-dist'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Environment
+      uses: ./.github/actions/setup-env
+      with:
+        go-version: ${{ inputs.go-version }}
+        node-version: ${{ inputs.node-version }}
+        faiss-ref: ${{ inputs.faiss-ref }}
+        onnx-version: ${{ inputs.onnx-version }}
+        os: ${{ inputs.os }}
+
+    - name: Download UI artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.ui-artifact-name }}
+        path: internal/api/ui
+
+    - name: Build Binary (Windows)
+      if: inputs.os == 'windows-latest'
+      shell: bash
+      run: |
+        set -euo pipefail
+        export CGO_ENABLED=1
+        export CGO_LDFLAGS="-L$(pwd)/libs -lonnxruntime"
+        export CGO_CPPFLAGS="-I$(pwd)/include -I$(pwd)"
+        go build -ldflags "-s -w -X main.version=${{ inputs.version }}" -o semango.exe ./cmd/semango
+
+    - name: Build Binary (Posix)
+      if: inputs.os != 'windows-latest'
+      shell: bash
+      run: |
+        set -euo pipefail
+        make build-no-ui VERSION="${{ inputs.version }}"
+
+    - name: Rename and Checksum
+      shell: bash
+      run: |
+        set -euo pipefail
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        case "$OS" in mingw*|msys*|cygwin*) OS="windows" ;; esac
+
+        mkdir -p dist
+        BINARY_NAME="semango"
+        ASSET_NAME="${BINARY_NAME}_${OS}_${ARCH}"
+
+        if [[ "$OS" == "windows" ]]; then
+          mv "${BINARY_NAME}.exe" "dist/${ASSET_NAME}.exe"
+          TARGET="dist/${ASSET_NAME}.exe"
+        else
+          mv "${BINARY_NAME}" "dist/${ASSET_NAME}"
+          chmod +x "dist/${ASSET_NAME}"
+          TARGET="dist/${ASSET_NAME}"
+        fi
+
+        echo "### Checksum for ${ASSET_NAME}" >> $GITHUB_STEP_SUMMARY
+        if command -v sha256sum >/dev/null 2>&1; then
+          sha256sum "$TARGET" | tee -a $GITHUB_STEP_SUMMARY
+        else
+          shasum -a 256 "$TARGET" | tee -a $GITHUB_STEP_SUMMARY
+        fi

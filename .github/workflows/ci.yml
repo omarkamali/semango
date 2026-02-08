@@ -1,13 +1,18 @@
 # Semango CI Workflow
 # Author: Omar Kamali <semango@omarkama.li>
 
-name: CI
+name: CI & Release
 
 on:
   push:
     branches: [master]
+    tags: ["v*"]
   pull_request:
     branches: [master]
+
+permissions:
+  contents: write
+  packages: write
 
 env:
   GO_VERSION: "1.23"
@@ -20,6 +25,7 @@ jobs:
   lint-ui:
     name: Lint UI
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,24 +48,28 @@ jobs:
   build-ui:
     name: Build UI
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Build UI
+        uses: ./.github/actions/build-ui
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
-          cache-dependency-path: ui/yarn.lock
 
-      - name: Install UI dependencies
-        working-directory: ui
-        run: yarn install --frozen-lockfile
-
-      - name: Build UI
-        working-directory: ui
-        run: yarn build
+      - name: Compute version
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload UI artifacts
         uses: actions/upload-artifact@v4
@@ -68,8 +78,8 @@ jobs:
           path: ui/dist
           retention-days: 1
 
-  test-and-build:
-    name: ${{ matrix.os }} - Test & Build
+  build-binary:
+    name: ${{ matrix.os }} - Build
     runs-on: ${{ matrix.os }}
     needs: build-ui
     strategy:
@@ -80,23 +90,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Environment
-        uses: ./.github/actions/setup-env
+      - name: Build semango
+        uses: ./.github/actions/build-semango-binary
         with:
+          os: ${{ matrix.os }}
           go-version: ${{ env.GO_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
           faiss-ref: ${{ env.FAISS_REF }}
           onnx-version: ${{ env.ONNX_VERSION }}
-          os: ${{ matrix.os }}
+          version: ${{ needs.build-ui.outputs.version }}
 
-      - name: Download UI artifacts
-        uses: actions/download-artifact@v4
+      - name: Upload Assets
+        uses: actions/upload-artifact@v4
         with:
-          name: ui-dist
-          path: internal/api/ui
+          name: assets-${{ matrix.os }}
+          path: dist/*
 
       - name: Go Lint (Linux Only)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
@@ -107,37 +118,82 @@ jobs:
           CGO_LDFLAGS: "-L${{ github.workspace }}/libs-static -Wl,-Bstatic -l:libfaiss_c.a -l:libfaiss.a -Wl,-Bdynamic -lstdc++ -lgomp -lopenblas -lpthread -lm"
 
       - name: Run Tests
-        if: matrix.os != 'windows-latest'
+        if: matrix.os != 'windows-latest' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/master')
         run: make test
 
-      - name: Build Binary (Posix)
-        if: matrix.os != 'windows-latest'
-        run: make build-no-ui
-
-      - name: Build Binary (Windows)
-        if: matrix.os == 'windows-latest'
+      - name: Verify Binary
         shell: bash
         run: |
-          export CGO_ENABLED=1
-          export CGO_LDFLAGS="-L$(pwd)/libs -lonnxruntime"
-          export CGO_CPPFLAGS="-I$(pwd)/include -I$(pwd)"
-          go build -ldflags "-s -w" -o semango.exe ./cmd/semango
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            ./semango.exe --help
+          else
+            ./semango --help
+          fi
 
-      - name: Verify Binary (Linux/macOS)
-        if: matrix.os != 'windows-latest'
-        run: |
-          ./semango --help
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-binary
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Verify Binary (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          ./semango.exe --help
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Download all assets
+        uses: actions/download-artifact@v4
         with:
-          name: semango-${{ matrix.os }}
-          path: |
-            semango
-            semango.exe
+          pattern: assets-*
+          path: release-dist
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Semango ${{ github.ref_name }}
+          files: |
+            release-dist/semango_*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: Docker Image
+    runs-on: ubuntu-latest
+    needs: create-release
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/omarkamali/semango
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.release
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
