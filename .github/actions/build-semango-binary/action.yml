@@ -60,7 +60,7 @@ runs:
         set -euo pipefail
         make build-no-ui VERSION="${{ inputs.version }}"
 
-    - name: Rename and Checksum
+    - name: Package and Checksum
       shell: bash
       run: |
         set -euo pipefail
@@ -73,15 +73,14 @@ runs:
         ASSET_NAME="${BINARY_NAME}_${OS}_${ARCH}"
 
         if [[ "$OS" == "windows" ]]; then
-          cp "${BINARY_NAME}.exe" "dist/${ASSET_NAME}.exe"
-          TARGET="dist/${ASSET_NAME}.exe"
+          zip -j "dist/${ASSET_NAME}.zip" "${BINARY_NAME}.exe"
+          TARGET="dist/${ASSET_NAME}.zip"
         else
-          cp "${BINARY_NAME}" "dist/${ASSET_NAME}"
-          chmod +x "dist/${ASSET_NAME}"
-          TARGET="dist/${ASSET_NAME}"
+          zip -j "dist/${ASSET_NAME}.zip" "${BINARY_NAME}"
+          TARGET="dist/${ASSET_NAME}.zip"
         fi
 
-        echo "### Checksum for ${ASSET_NAME}" >> $GITHUB_STEP_SUMMARY
+        echo "### Checksum for ${ASSET_NAME}.zip" >> $GITHUB_STEP_SUMMARY
         if command -v sha256sum >/dev/null 2>&1; then
           sha256sum "$TARGET" | tee -a $GITHUB_STEP_SUMMARY
         else
