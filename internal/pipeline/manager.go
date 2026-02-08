@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync/atomic"
+	"time"
 
 	"github.com/omarkamali/semango/internal/config"
 	"github.com/omarkamali/semango/internal/ingest"
@@ -26,7 +29,12 @@ func NewManager(cfg *config.Config, embedder ingest.Embedder) *Manager {
 	ls := []ingest.Loader{
 		ingest.NewTextLoader(cfg.Files.ChunkSize, cfg.Files.ChunkOverlap),
 		ingest.NewCodeLoader(false, 5*1024*1024),
-		ingest.NewPDFLoader(cfg.Files.ChunkSize, cfg.Files.ChunkOverlap),
+		ingest.NewPDFLoader(
+			cfg.Files.ChunkSize,
+			cfg.Files.ChunkOverlap,
+			ingest.WithPDFTimeout(time.Duration(cfg.Files.PDFTimeoutSeconds)*time.Second),
+			ingest.WithPDFHeartbeatInterval(time.Duration(cfg.Files.PDFProgressIntervalSeconds)*time.Second),
+		),
 		&ingest.ImageLoader{},
 		tabular.NewCSVLoader(cfg.Tabular),
 		tabular.NewJSONLoader(cfg.Tabular),
@@ -115,6 +123,7 @@ func (m *Manager) ProcessFile(ctx context.Context, relPath, absPath string) erro
 // RunIndexing performs a full crawl and indexes all files.
 func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 	slog.Info("Starting indexing process...")
+	slog.Info("Indexing runtime", "goos", runtime.GOOS, "goarch", runtime.GOARCH)
 	rootDir, err := os.Getwd()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get working directory: %w", err)
@@ -125,26 +134,57 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 
 	go ingest.Crawl(m.cfg.Files, filePathChan, errChan)
 
-	var filesProcessedCount int
+	var filesProcessedCount atomic.Int64
+	var filesFailedCount atomic.Int64
+	var currentFile atomic.Value
+	currentFile.Store("")
+	start := time.Now()
+	stopHeartbeat := make(chan struct{})
+	defer close(stopHeartbeat)
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				slog.Info("Indexing heartbeat",
+					"processed", filesProcessedCount.Load(),
+					"failed", filesFailedCount.Load(),
+					"elapsed", time.Since(start).String(),
+					"current_file", currentFile.Load(),
+				)
+			case <-stopHeartbeat:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	for relPath := range filePathChan {
+		if err := ctx.Err(); err != nil {
+			return int(filesProcessedCount.Load()), err
+		}
+		currentFile.Store(relPath)
 		absPath := filepath.Join(rootDir, relPath)
 		if err := m.ProcessFile(ctx, relPath, absPath); err != nil {
 			slog.Error("Failed to process file", "path", relPath, "error", err)
+			filesFailedCount.Add(1)
 			continue
 		}
-		filesProcessedCount++
+		filesProcessedCount.Add(1)
 	}
 
 	select {
 	case err := <-errChan:
 		if err != nil {
-			return filesProcessedCount, err
+			return int(filesProcessedCount.Load()), err
 		}
 	default:
 	}
 
-	slog.Info("Indexing process completed.", "files_processed", filesProcessedCount)
-	return filesProcessedCount, nil
+	slog.Info("Indexing process completed.", "files_processed", filesProcessedCount.Load(), "files_failed", filesFailedCount.Load())
+	return int(filesProcessedCount.Load()), nil
 }
 
 // RunReconciliation ensures the index is up to date with the filesystem.

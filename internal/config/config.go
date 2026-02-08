@@ -67,7 +67,7 @@ type RerankerConfig struct {
 	APIKey             string `json:"api_key" yaml:"api_key" cue:"api_key"`
 	APIKeyEnv          string `json:"api_key_env" yaml:"api_key_env" cue:"api_key_env"`
 	BaseURL            string `json:"base_url" yaml:"base_url" cue:"base_url"`
-	BaseURLEnv     string `json:"base_url_env" yaml:"base_url_env" cue:"base_url_env"`
+	BaseURLEnv         string `json:"base_url_env" yaml:"base_url_env" cue:"base_url_env"`
 }
 
 // HybridConfig matches the 'hybrid' section of semango.yml
@@ -91,6 +91,11 @@ type FilesConfig struct {
 	Exclude      []string `json:"exclude" yaml:"exclude" cue:"exclude"`
 	ChunkSize    int      `json:"chunk_size" yaml:"chunk_size" cue:"chunk_size"`
 	ChunkOverlap int      `json:"chunk_overlap" yaml:"chunk_overlap" cue:"chunk_overlap"`
+	// PDFTimeoutSeconds bounds the total time allowed to extract text from a single PDF.
+	// When exceeded, indexing will skip the PDF with an error instead of hanging.
+	PDFTimeoutSeconds int `json:"pdf_timeout_seconds" yaml:"pdf_timeout_seconds" cue:"pdf_timeout_seconds"`
+	// PDFProgressIntervalSeconds controls periodic progress logs while extracting text from PDFs.
+	PDFProgressIntervalSeconds int `json:"pdf_progress_interval_seconds" yaml:"pdf_progress_interval_seconds" cue:"pdf_progress_interval_seconds"`
 }
 
 // ServerConfig matches the 'server' section of semango.yml
@@ -286,12 +291,12 @@ func Load(configPath string, cueSchemaPath string) (*Config, error) {
 func GetDefaultConfig() *Config {
 	return &Config{
 		Embedding: EmbeddingConfig{
-			Provider:       "local",
-			Model:          "onnx-models/all-MiniLM-L6-v2-onnx",
-			BatchSize:      48,
-			Concurrent:     4,
-			ModelCacheDir:  "${SEMANGO_MODEL_DIR:=~/.cache/semango}",
-			GPU:            true,
+			Provider:      "local",
+			Model:         "onnx-models/all-MiniLM-L6-v2-onnx",
+			BatchSize:     48,
+			Concurrent:    4,
+			ModelCacheDir: "${SEMANGO_MODEL_DIR:=~/.cache/semango}",
+			GPU:           true,
 		},
 		Lexical: LexicalConfig{
 			Enabled:   true,
@@ -312,10 +317,12 @@ func GetDefaultConfig() *Config {
 			Fusion:        "linear",
 		},
 		Files: FilesConfig{
-			Include:      []string{"**/*.md", "**/*.go", "**/*.{png,jpg,jpeg}", "**/*.pdf", "**/*.csv", "**/*.json", "**/*.jsonl", "**/*.parquet"},
-			Exclude:      []string{".git/**", "node_modules/**", "vendor/**"},
-			ChunkSize:    1000,
-			ChunkOverlap: 200,
+			Include:                    []string{"**/*.md", "**/*.go", "**/*.{png,jpg,jpeg}", "**/*.pdf", "**/*.csv", "**/*.json", "**/*.jsonl", "**/*.parquet"},
+			Exclude:                    []string{".git/**", "node_modules/**", "vendor/**"},
+			ChunkSize:                  1000,
+			ChunkOverlap:               200,
+			PDFTimeoutSeconds:          900, // 15 minutes
+			PDFProgressIntervalSeconds: 30,
 		},
 		Server: ServerConfig{
 			Host: "0.0.0.0",
@@ -410,6 +417,11 @@ files:
     - "vendor/**"
   chunk_size: 1000
   chunk_overlap: 200
+	# Bounds the total time spent extracting text from a single PDF.
+	# Prevents silent hangs on malformed/complex PDFs.
+	pdf_timeout_seconds: 900
+	# Emit a periodic progress/heartbeat log while extracting PDFs.
+	pdf_progress_interval_seconds: 30
 
 # Server settings
 server:

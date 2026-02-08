@@ -60,6 +60,10 @@ package config
 	exclude: [...string] | *[".git/**", "node_modules/**", "vendor/**"]
 	chunk_size: int | *1000
 	chunk_overlap: int | *200
+	// Bounds the total time spent extracting text from a single PDF.
+	pdf_timeout_seconds: int & >=1 | *900
+	// Emit a periodic heartbeat log while extracting PDFs.
+	pdf_progress_interval_seconds: int & >=1 | *30
 }
 
 #ServerConfig: {

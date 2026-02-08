@@ -18,15 +18,16 @@ package config
 
 #EmbeddingConfig: {
 	provider:         string | *"local" | "openai" // Default: local
-	model:            string // Example: text-embedding-3-large
+	model:            string // Example: text-embedding-3-large (or Hugging Face ID for local)
 	batch_size:       int & >=1 & <=512 | *48 // Default: 48
 	concurrent:       int & >=1 | *4          // Default: 4
 	model_cache_dir:  string | *"~/.cache/semango" // Default added to satisfy concreteness
 	onnx_output_name?: string // Optional
+	gpu?:              bool | *true
 	api_key?:         string
-	api_key_env:      string | *"OPENAI_API_KEY"
+	api_key_env?:     string
 	base_url?:        string
-	base_url_env:     string | *"OPENAI_BASE_URL"
+	base_url_env?:    string
 }
 
 #LexicalConfig: {
@@ -43,9 +44,9 @@ package config
 	batch_size:           int & >=1 | *32                  // Default: 32
 	per_request_override: bool   | *true                // Default: true
 	api_key?:             string
-	api_key_env:          string | *"OPENAI_API_KEY"
+	api_key_env?:         string
 	base_url?:            string
-	base_url_env:         string | *"OPENAI_BASE_URL"
+	base_url_env?:        string
 }
 
 #HybridConfig: {
@@ -59,6 +60,10 @@ package config
 	exclude: [...string] | *[".git/**", "node_modules/**", "vendor/**"]
 	chunk_size: int | *1000
 	chunk_overlap: int | *200
+	// Bounds the total time spent extracting text from a single PDF.
+	pdf_timeout_seconds: int & >=1 | *900
+	// Emit a periodic heartbeat log while extracting PDFs.
+	pdf_progress_interval_seconds: int & >=1 | *30
 }
 
 #ServerConfig: {

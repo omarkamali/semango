@@ -11,14 +11,15 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/schollz/progressbar/v3"
 	ortlib "github.com/omarkamali/semango/internal/onnxruntime"
 	"github.com/omarkamali/semango/internal/util"
 	"github.com/omarkamali/semango/pkg/semango"
+	"github.com/schollz/progressbar/v3"
 	"github.com/yalue/onnxruntime_go"
 )
 
@@ -737,36 +738,76 @@ func (le *LocalEmbedder) initONNXSession(modelOnnxPath string, outputName string
 	}
 
 	var options *onnxruntime_go.SessionOptions
+	providerUsed := "CPU"
 	if le.enableGPU {
 		var err error
 		options, err = onnxruntime_go.NewSessionOptions()
 		if err != nil {
 			slog.Warn("Failed to create ONNX session options for GPU, falling back to CPU", "error", err)
 		} else {
-			// Try enabling CUDA
-			cudaOptions, cudaErr := onnxruntime_go.NewCUDAProviderOptions()
-			if cudaErr != nil {
-				slog.Warn("Failed to create CUDA provider options, falling back to CPU", "error", cudaErr)
-				if err := options.Destroy(); err != nil {
-					slog.Warn("Failed to destroy ONNX session options after CUDA provider failure", "error", err)
+			// Prefer platform-appropriate providers, but gracefully fall back to CPU.
+			tryProvider := func(name string, fn func() error) bool {
+				if options == nil {
+					return false
+				}
+				if err := fn(); err != nil {
+					slog.Warn("Failed to enable ONNX execution provider; will try fallback", "provider", name, "error", err)
+					return false
+				}
+				providerUsed = name
+				slog.Info("ONNX execution provider enabled", "provider", name)
+				return true
+			}
+
+			switch runtime.GOOS {
+			case "darwin":
+				// CoreML is the best available accelerator on macOS when present.
+				_ = tryProvider("CoreML", func() error {
+					return options.AppendExecutionProviderCoreMLV2(nil)
+				}) || tryProvider("CUDA", func() error {
+					cudaOptions, cudaErr := onnxruntime_go.NewCUDAProviderOptions()
+					if cudaErr != nil {
+						return cudaErr
+					}
+					defer func() {
+						_ = cudaOptions.Destroy()
+					}()
+					return options.AppendExecutionProviderCUDA(cudaOptions)
+				})
+			case "windows":
+				// DirectML works on a wide range of Windows GPUs.
+				_ = tryProvider("DirectML", func() error {
+					return options.AppendExecutionProviderDirectML(0)
+				}) || tryProvider("CUDA", func() error {
+					cudaOptions, cudaErr := onnxruntime_go.NewCUDAProviderOptions()
+					if cudaErr != nil {
+						return cudaErr
+					}
+					defer func() {
+						_ = cudaOptions.Destroy()
+					}()
+					return options.AppendExecutionProviderCUDA(cudaOptions)
+				})
+			default:
+				// Linux and everything else: prefer CUDA when available.
+				_ = tryProvider("CUDA", func() error {
+					cudaOptions, cudaErr := onnxruntime_go.NewCUDAProviderOptions()
+					if cudaErr != nil {
+						return cudaErr
+					}
+					defer func() {
+						_ = cudaOptions.Destroy()
+					}()
+					return options.AppendExecutionProviderCUDA(cudaOptions)
+				})
+			}
+
+			if providerUsed == "CPU" {
+				slog.Warn("GPU acceleration requested but no supported execution provider could be enabled; falling back to CPU")
+				if destroyErr := options.Destroy(); destroyErr != nil {
+					slog.Warn("Failed to destroy ONNX session options after provider activation failure", "error", destroyErr)
 				}
 				options = nil
-			} else {
-				defer func() {
-					if destroyErr := cudaOptions.Destroy(); destroyErr != nil {
-						slog.Warn("Failed to destroy CUDA provider options", "error", destroyErr)
-					}
-				}()
-				err = options.AppendExecutionProviderCUDA(cudaOptions)
-				if err != nil {
-					slog.Warn("GPU requested but CUDA execution provider failed to initialize, falling back to CPU", "error", err)
-					if destroyErr := options.Destroy(); destroyErr != nil {
-						slog.Warn("Failed to destroy ONNX session options after CUDA activation failure", "error", destroyErr)
-					}
-					options = nil
-				} else {
-					slog.Info("GPU acceleration (CUDA) enabled for ONNX session")
-				}
 			}
 		}
 	}
@@ -786,6 +827,12 @@ func (le *LocalEmbedder) initONNXSession(modelOnnxPath string, outputName string
 		}
 		return nil, fmt.Errorf("failed to create dynamic ONNX session: %w", err)
 	}
+	if options != nil {
+		if destroyErr := options.Destroy(); destroyErr != nil {
+			slog.Warn("Failed to destroy ONNX session options after successful session creation", "error", destroyErr)
+		}
+	}
+	slog.Info("ONNX session initialized", "provider", providerUsed)
 
 	return session, nil
 }

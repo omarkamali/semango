@@ -42,6 +42,10 @@ files:
     - "vendor/**"
   chunk_size: 1000
   chunk_overlap: 200
+  # Prevents indexing from hanging forever on a single PDF.
+  pdf_timeout_seconds: 900
+  # Emit a periodic heartbeat while extracting PDF text.
+  pdf_progress_interval_seconds: 30
 
 server:
   host: 0.0.0.0
@@ -84,6 +88,10 @@ Parsed but **not used** in the current query pipeline. Keep disabled unless you 
 
 ### `files`
 Controls what gets indexed. The default `include` list is broader than what is currently supported by loaders (see [Ingestion](/guide/ingestion)).
+
+PDF-specific options:
+- `pdf_timeout_seconds`: max time allowed for extracting text from a single PDF before skipping it.
+- `pdf_progress_interval_seconds`: how often to log a “still extracting” heartbeat for PDFs.
 
 ### `server`
 - `host`, `port`: HTTP binding.
