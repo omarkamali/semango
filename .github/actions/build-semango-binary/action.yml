@@ -73,10 +73,10 @@ runs:
         ASSET_NAME="${BINARY_NAME}_${OS}_${ARCH}"
 
         if [[ "$OS" == "windows" ]]; then
-          mv "${BINARY_NAME}.exe" "dist/${ASSET_NAME}.exe"
+          cp "${BINARY_NAME}.exe" "dist/${ASSET_NAME}.exe"
           TARGET="dist/${ASSET_NAME}.exe"
         else
-          mv "${BINARY_NAME}" "dist/${ASSET_NAME}"
+          cp "${BINARY_NAME}" "dist/${ASSET_NAME}"
           chmod +x "dist/${ASSET_NAME}"
           TARGET="dist/${ASSET_NAME}"
         fi
