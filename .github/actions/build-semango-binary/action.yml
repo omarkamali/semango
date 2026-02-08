@@ -73,7 +73,11 @@ runs:
         ASSET_NAME="${BINARY_NAME}_${OS}_${ARCH}"
 
         if [[ "$OS" == "windows" ]]; then
-          zip -j "dist/${ASSET_NAME}.zip" "${BINARY_NAME}.exe"
+          if command -v 7z >/dev/null 2>&1; then
+            7z a -tzip "dist/${ASSET_NAME}.zip" "${BINARY_NAME}.exe"
+          else
+            powershell -Command "Compress-Archive -Path '${BINARY_NAME}.exe' -DestinationPath 'dist/${ASSET_NAME}.zip' -Force"
+          fi
           TARGET="dist/${ASSET_NAME}.zip"
         else
           zip -j "dist/${ASSET_NAME}.zip" "${BINARY_NAME}"
