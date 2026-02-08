@@ -9,8 +9,8 @@ project_name: semango
 before:
   hooks:
     # Build UI before Go build
-    - cmd: bash -c "cd ui && yarn install --frozen-lockfile && yarn build"
-    - cmd: bash -c "rm -rf internal/api/ui && cp -r ui/dist internal/api/ui"
+    - 'bash -c "cd ui && yarn install --frozen-lockfile && yarn build"'
+    - 'bash -c "rm -rf internal/api/ui && cp -r ui/dist internal/api/ui"'
     # Ensure go.mod is tidy
     - go mod tidy
 
@@ -67,11 +67,13 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - README.md
       - LICENSE
