@@ -53,7 +53,11 @@ func Crawl(cfg config.FilesConfig, filePathChan chan<- string, errChan chan<- er
 			// Check if this directory should be excluded
 			for _, excludePattern := range cfg.Exclude {
 				patternToCheck := strings.TrimSuffix(excludePattern, "/**")
-				if matched, _ := doublestar.Match(patternToCheck, normalizedPath); matched {
+				targetPath := normalizedPath
+				if filepath.IsAbs(patternToCheck) {
+					targetPath = filepath.ToSlash(absPath)
+				}
+				if matched, _ := doublestar.Match(patternToCheck, targetPath); matched {
 					if excludePattern == patternToCheck || strings.HasSuffix(excludePattern, "/**") {
 						slog.Debug("Excluding directory due to pattern", "dir_path", normalizedPath, "pattern", excludePattern)
 						return filepath.SkipDir // Use filepath.SkipDir with WalkDir
@@ -65,7 +69,11 @@ func Crawl(cfg config.FilesConfig, filePathChan chan<- string, errChan chan<- er
 
 		// It's a file. Check exclude patterns.
 		for _, excludePattern := range cfg.Exclude {
-			if matched, _ := doublestar.Match(excludePattern, normalizedPath); matched {
+			targetPath := normalizedPath
+			if filepath.IsAbs(excludePattern) {
+				targetPath = filepath.ToSlash(absPath)
+			}
+			if matched, _ := doublestar.Match(excludePattern, targetPath); matched {
 				slog.Debug("Excluding file due to pattern", "file_path", normalizedPath, "pattern", excludePattern)
 				return nil
 			}
@@ -77,7 +85,11 @@ func Crawl(cfg config.FilesConfig, filePathChan chan<- string, errChan chan<- er
 			included = true
 		} else {
 			for _, includePattern := range cfg.Include {
-				if matched, _ := doublestar.Match(includePattern, normalizedPath); matched {
+				targetPath := normalizedPath
+				if filepath.IsAbs(includePattern) {
+					targetPath = filepath.ToSlash(absPath)
+				}
+				if matched, _ := doublestar.Match(includePattern, targetPath); matched {
 					included = true
 					break
 				}

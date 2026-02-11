@@ -25,15 +25,23 @@ type Manager struct {
 }
 
 func NewManager(cfg *config.Config, embedder ingest.Embedder) *Manager {
-	// register loaders once
+	pdfTimeout := time.Duration(cfg.Files.PDFTimeoutSeconds) * time.Second
+	if pdfTimeout == 0 {
+		pdfTimeout = 15 * time.Minute
+	}
+	pdfHeartbeat := time.Duration(cfg.Files.PDFProgressIntervalSeconds) * time.Second
+	if pdfHeartbeat == 0 {
+		pdfHeartbeat = 30 * time.Second
+	}
+
 	ls := []ingest.Loader{
 		ingest.NewTextLoader(cfg.Files.ChunkSize, cfg.Files.ChunkOverlap),
 		ingest.NewCodeLoader(false, 5*1024*1024),
 		ingest.NewPDFLoader(
 			cfg.Files.ChunkSize,
 			cfg.Files.ChunkOverlap,
-			ingest.WithPDFTimeout(time.Duration(cfg.Files.PDFTimeoutSeconds)*time.Second),
-			ingest.WithPDFHeartbeatInterval(time.Duration(cfg.Files.PDFProgressIntervalSeconds)*time.Second),
+			ingest.WithPDFTimeout(pdfTimeout),
+			ingest.WithPDFHeartbeatInterval(pdfHeartbeat),
 		),
 		&ingest.ImageLoader{},
 		tabular.NewCSVLoader(cfg.Tabular),
@@ -134,10 +142,13 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 
 	go ingest.Crawl(m.cfg.Files, filePathChan, errChan)
 
+	var filesStartedCount atomic.Int64
 	var filesProcessedCount atomic.Int64
 	var filesFailedCount atomic.Int64
 	var currentFile atomic.Value
 	currentFile.Store("")
+	var currentFileStart atomic.Int64
+	currentFileStart.Store(0)
 	start := time.Now()
 	stopHeartbeat := make(chan struct{})
 	defer close(stopHeartbeat)
@@ -147,11 +158,18 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 		for {
 			select {
 			case <-ticker.C:
+				startNs := currentFileStart.Load()
+				fileElapsed := ""
+				if startNs > 0 {
+					fileElapsed = time.Since(time.Unix(0, startNs)).String()
+				}
 				slog.Info("Indexing heartbeat",
+					"started", filesStartedCount.Load(),
 					"processed", filesProcessedCount.Load(),
 					"failed", filesFailedCount.Load(),
 					"elapsed", time.Since(start).String(),
 					"current_file", currentFile.Load(),
+					"current_file_elapsed", fileElapsed,
 				)
 			case <-stopHeartbeat:
 				return
@@ -166,6 +184,8 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 			return int(filesProcessedCount.Load()), err
 		}
 		currentFile.Store(relPath)
+		currentFileStart.Store(time.Now().UnixNano())
+		filesStartedCount.Add(1)
 		absPath := filepath.Join(rootDir, relPath)
 		if err := m.ProcessFile(ctx, relPath, absPath); err != nil {
 			slog.Error("Failed to process file", "path", relPath, "error", err)
@@ -183,7 +203,7 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 	default:
 	}
 
-	slog.Info("Indexing process completed.", "files_processed", filesProcessedCount.Load(), "files_failed", filesFailedCount.Load())
+	slog.Info("Indexing process completed.", "files_started", filesStartedCount.Load(), "files_processed", filesProcessedCount.Load(), "files_failed", filesFailedCount.Load())
 	return int(filesProcessedCount.Load()), nil
 }
 

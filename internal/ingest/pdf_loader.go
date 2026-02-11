@@ -1,14 +1,20 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/dslipak/pdf"
 )
 
 // PDFLoader handles PDF files.
@@ -75,28 +81,7 @@ func (pl *PDFLoader) Load(ctx context.Context, relPath string, absPath string) (
 		defer cancel()
 	}
 
-	f, err := os.Open(absPath)
-	if err != nil {
-		slog.Error("Failed to open PDF file", "path", absPath, "error", err)
-		return nil, err
-	}
-	defer func() {
-		_ = f.Close()
-	}()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	// Ensure we don't hang indefinitely: on timeout/cancel, close the file to break IO.
 	closeOnDone := make(chan struct{})
-	go func() {
-		select {
-		case <-loadCtx.Done():
-			_ = f.Close()
-		case <-closeOnDone:
-		}
-	}()
 	defer close(closeOnDone)
 
 	var currentPage atomic.Int64
@@ -122,69 +107,11 @@ func (pl *PDFLoader) Load(ctx context.Context, relPath string, absPath string) (
 		}()
 	}
 
-	// Guard against pdf.NewReader hanging: run it with the same timeout context.
-	type readerResult struct {
-		r   *pdf.Reader
-		err error
-	}
-	readerCh := make(chan readerResult, 1)
-	go func() {
-		r, err := pdf.NewReader(f, fi.Size())
-		readerCh <- readerResult{r: r, err: err}
-	}()
-	var r *pdf.Reader
-	select {
-	case res := <-readerCh:
-		if res.err != nil {
-			slog.Error("Failed to parse PDF file", "path", absPath, "error", res.err)
-			return nil, res.err
-		}
-		r = res.r
-	case <-loadCtx.Done():
-		return nil, loadCtx.Err()
-	}
-
-	var allReps []Representation
-
-	for i := 1; i <= r.NumPage(); i++ {
-		currentPage.Store(int64(i))
-		if err := loadCtx.Err(); err != nil {
-			return nil, err
-		}
-		p := r.Page(i)
-		if p.V.IsNull() {
-			continue
-		}
-
-		// Guard against GetPlainText hanging.
-		type textResult struct {
-			text string
-			err  error
-		}
-		textCh := make(chan textResult, 1)
-		go func() {
-			t, err := p.GetPlainText(nil)
-			textCh <- textResult{text: t, err: err}
-		}()
-		var text string
-		select {
-		case res := <-textCh:
-			if res.err != nil {
-				slog.Warn("Failed to extract text from PDF page", "path", absPath, "page", i, "error", res.err)
-				continue
-			}
-			text = res.text
-		case <-loadCtx.Done():
-			return nil, loadCtx.Err()
-		}
-
-		if len(text) == 0 {
-			continue
-		}
-
-		// Chunk per page
-		pageReps := pl.chunkText(text, relPath, i)
-		allReps = append(allReps, pageReps...)
+	// PDF extraction is run in a subprocess so we can *reliably* abort on timeout
+	// even if the PDF parser gets stuck in a CPU loop.
+	allReps, err := pl.extractViaSubprocess(loadCtx, &currentPage, relPath, absPath)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(allReps) == 0 {
@@ -194,6 +121,104 @@ func (pl *PDFLoader) Load(ctx context.Context, relPath string, absPath string) (
 
 	slog.Debug("Created PDF chunks", "chunks", len(allReps), "relPath", relPath)
 	return allReps, nil
+}
+
+func (pl *PDFLoader) extractViaSubprocess(ctx context.Context, currentPage *atomic.Int64, relPath, absPath string) ([]Representation, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+
+	// Use base name to avoid leaking full paths in process listings where possible.
+	cmd := exec.CommandContext(ctx, exe, "_pdf-extract", "--abs", absPath)
+	cmd.Dir = filepath.Dir(absPath)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	// Read stderr concurrently for richer error messages.
+	stderrDone := make(chan string, 1)
+	go func() {
+		b, _ := ioReadAllLimited(stderr, 64*1024)
+		stderrDone <- string(b)
+	}()
+
+	dec := json.NewDecoder(stdout)
+	var allReps []Representation
+	for {
+		var page PDFExtractPage
+		err := dec.Decode(&page)
+		if err != nil {
+			if errors.Is(err, os.ErrClosed) || strings.Contains(err.Error(), "file already closed") {
+				break
+			}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				break
+			}
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			_ = cmd.Wait()
+			stderrText := <-stderrDone
+			if stderrText != "" {
+				return nil, fmt.Errorf("pdf extract decode error: %w (stderr: %s)", err, stderrText)
+			}
+			return nil, fmt.Errorf("pdf extract decode error: %w", err)
+		}
+
+		if currentPage != nil {
+			currentPage.Store(int64(page.Page))
+		}
+		if page.Text == "" {
+			continue
+		}
+		pageReps := pl.chunkText(page.Text, relPath, page.Page)
+		allReps = append(allReps, pageReps...)
+	}
+
+	wErr := cmd.Wait()
+	stderrText := <-stderrDone
+	if wErr != nil {
+		// If we timed out/canceled, return the context error so callers can count it as a failure.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if strings.TrimSpace(stderrText) != "" {
+			return nil, fmt.Errorf("pdf extraction failed: %w (stderr: %s)", wErr, strings.TrimSpace(stderrText))
+		}
+		return nil, fmt.Errorf("pdf extraction failed: %w", wErr)
+	}
+
+	return allReps, nil
+}
+
+// ioReadAllLimited reads up to limit bytes.
+func ioReadAllLimited(r io.Reader, limit int64) ([]byte, error) {
+	if r == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 64 * 1024
+	}
+	buf := &bytes.Buffer{}
+	_, err := io.CopyN(buf, r, limit)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return buf.Bytes(), nil
+		}
+		return buf.Bytes(), err
+	}
+	return buf.Bytes(), nil
 }
 
 func (pl *PDFLoader) chunkText(text string, relPath string, pageNum int) []Representation {

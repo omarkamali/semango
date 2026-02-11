@@ -64,6 +64,14 @@ Semango includes or depends on the following third-party software:
 - **License:** BSD-3-Clause
 - **URL:** https://gitlab.com/cznic/sqlite
 
+## Internalized / Vendored Code
+
+### pdflib (PDF Parsing)
+- **License:** BSD-3-Clause
+- **Original Source:** [rsc.io/pdf](https://github.com/rsc/pdf)
+- **Copyright:** Copyright (c) 2014 The Go Authors. All rights reserved.
+- **Modifications:** 🥭 Semango uses a modified internal version to address high-CPU hangs on malformed documents and to implement spatial text reconstruction (preserving layout and whitespace).
+
 ## JavaScript/UI Dependencies
 
 ### React

@@ -49,12 +49,13 @@ var rootCmd = &cobra.Command{
 
 		// Skip configuration loading for commands that don't need it
 		skipConfigCommands := map[string]bool{
-			"init":       true,
-			"install":    true,
-			"version":    true,
-			"models":     true,
-			"help":       true,
-			"completion": true,
+			"init":         true,
+			"install":      true,
+			"version":      true,
+			"models":       true,
+			"_pdf-extract": true,
+			"help":         true,
+			"completion":   true,
 		}
 
 		isSkip := false
@@ -90,6 +91,24 @@ var rootCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		slog.Info("Welcome to 🥭 Semango! Use -h or --help for available commands.")
+	},
+}
+
+// Internal command used for killable PDF extraction.
+// Streams JSON objects to stdout; must never log to stdout.
+var pdfExtractCmd = &cobra.Command{
+	Use:    "_pdf-extract",
+	Hidden: true,
+	Short:  "(internal) Extract PDF text",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		absPath, _ := cmd.Flags().GetString("abs")
+		if absPath == "" {
+			return fmt.Errorf("missing --abs")
+		}
+		enc := json.NewEncoder(os.Stdout)
+		return ingest.ExtractPDFPages(absPath, func(p ingest.PDFExtractPage) error {
+			return enc.Encode(p)
+		})
 	},
 }
 
@@ -393,6 +412,7 @@ var mcpSSECmd = &cobra.Command{
 func init() {
 	// Logger is initialized by importing internal/util
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(pdfExtractCmd)
 	rootCmd.AddCommand(indexCmd)
 	indexCmd.AddCommand(indexStatsCmd)
 	rootCmd.AddCommand(searchCmd)
@@ -410,6 +430,8 @@ func init() {
 	initCmd.Flags().StringP("file", "f", config.DefaultConfigPath, "Path to write the configuration file")
 	rootCmd.PersistentFlags().StringP("config", "c", config.DefaultConfigPath, "Path to the configuration file")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose logging")
+
+	pdfExtractCmd.Flags().String("abs", "", "Absolute path to PDF")
 }
 
 func Execute() {

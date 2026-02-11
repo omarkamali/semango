@@ -126,13 +126,13 @@ ui-copy: ui-build
 # Build the Go binary with embedded UI
 build: ui-copy onnx-embed
 	@echo "Building $(BINARY_NAME)$(BINARY_EXT) with embedded UI..."
-	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)$(BINARY_EXT) $(CMD_PATH)
+	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -tags faiss -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)$(BINARY_EXT) $(CMD_PATH)
 	@echo "$(BINARY_NAME)$(BINARY_EXT) built successfully with embedded UI."
 
 # Build Go binary without UI (for development)
 build-no-ui: onnx-embed
 	@echo "Building $(BINARY_NAME)$(BINARY_EXT) without UI..."
-	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)$(BINARY_EXT) $(CMD_PATH)
+	@CGO_CPPFLAGS="$(CGO_CPPFLAGS_ALL)" CGO_LDFLAGS="$(CGO_LDFLAGS_ALL)" go build -tags faiss -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)$(BINARY_EXT) $(CMD_PATH)
 	@echo "$(BINARY_NAME)$(BINARY_EXT) built successfully."
 
 # Run linters
