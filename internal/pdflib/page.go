@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package pdf
+package pdflib
 
 import (
 	"bytes"
@@ -723,7 +723,7 @@ func (p Page) walkTextBlocks(walker func(enc TextEncoding, x, y float64, s strin
 				x := v.Index(i)
 				if x.Kind() == String {
 					walker(enc, currentX, currentY, x.RawString())
-				} else if x.Kind() == Number {
+				} else if x.Kind() == Integer || x.Kind() == Real {
 					if x.Float64() <= -100 {
 						walker(enc, currentX, currentY, " ")
 					}
