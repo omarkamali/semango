@@ -182,7 +182,12 @@ func (pl *PDFLoader) extractViaSubprocess(ctx context.Context, currentPage *atom
 		if page.Text == "" {
 			continue
 		}
-		pageReps := pl.chunkText(page.Text, relPath, page.Page)
+		// Clean extracted text: dehyphenate, remove replacement chars.
+		cleaned := cleanExtractedText(page.Text)
+		if cleaned == "" {
+			continue
+		}
+		pageReps := pl.chunkText(cleaned, relPath, page.Page)
 		allReps = append(allReps, pageReps...)
 	}
 
@@ -222,75 +227,15 @@ func ioReadAllLimited(r io.Reader, limit int64) ([]byte, error) {
 }
 
 func (pl *PDFLoader) chunkText(text string, relPath string, pageNum int) []Representation {
-	var reps []Representation
-	size := pl.chunkSize
-	ov := pl.overlap
+	// Use the shared rune-aware chunking. The base offset encodes the page
+	// number so that chunk IDs stay unique across pages.
+	reps := chunkTextGeneric(text, relPath, "PDFLoader", int64(pageNum*1000), pl.chunkSize, pl.overlap)
 
-	if size <= 0 || len(text) <= size {
-		chunkID := ChunkID(relPath, "pdf_page", int64(pageNum))
-		reps = append(reps, Representation{
-			ID:       chunkID,
-			Path:     relPath,
-			Modality: "text",
-			Text:     text,
-			Meta: map[string]string{
-				"source":     "PDFLoader",
-				"page":       strconv.Itoa(pageNum),
-				"offset":     "0",
-				"ocr_failed": "false",
-				"path":       relPath,
-			},
-		})
-		return reps
+	// Enrich metadata with PDF-specific fields.
+	for i := range reps {
+		reps[i].Meta["page"] = strconv.Itoa(pageNum)
+		reps[i].Meta["source"] = "PDFLoader"
+		reps[i].Meta["ocr_failed"] = "false"
 	}
-
-	start := 0
-	offset := 0
-	for start < len(text) {
-		end := start + size
-		if end > len(text) {
-			end = len(text)
-		}
-
-		if end < len(text) {
-			for end > start && !isWordBoundary(text[end]) {
-				end--
-			}
-			if end == start {
-				end = start + size
-			}
-		}
-
-		chunk := text[start:end]
-		chunkID := ChunkID(relPath, "pdf_page", int64(pageNum*1000+offset))
-		reps = append(reps, Representation{
-			ID:       chunkID,
-			Path:     relPath,
-			Modality: "text",
-			Text:     chunk,
-			Meta: map[string]string{
-				"source":     "PDFLoader",
-				"page":       strconv.Itoa(pageNum),
-				"offset":     strconv.Itoa(start),
-				"ocr_failed": "false",
-				"path":       relPath,
-			},
-		})
-
-		if end == len(text) {
-			break
-		}
-
-		nextStart := end - ov
-		if nextStart <= start {
-			nextStart = start + 1
-		}
-		for nextStart < len(text) && !isWordBoundary(text[nextStart]) {
-			nextStart++
-		}
-		start = nextStart
-		offset++
-	}
-
 	return reps
 }

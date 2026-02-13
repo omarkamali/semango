@@ -51,84 +51,13 @@ func (tl *TextLoader) Load(ctx context.Context, relPath string, absPath string) 
 	}
 	textContent := string(contentBytes)
 
-	// Chunking with word boundaries
-	var reps []Representation
-	size := tl.chunkSize
-	ov := tl.overlap
-	if size <= 0 || len(textContent) <= size {
-		// Single chunk for small files
-		chunkID := ChunkID(relPath, "text", 0)
-		reps = append(reps, Representation{
-			ID:       chunkID,
-			Path:     relPath,
-			Modality: "text",
-			Text:     textContent,
-			Meta: map[string]string{
-				"source": "TextLoader",
-				"offset": "0",
-				"path":   relPath, // Explicitly store path in meta
-			},
-		})
-		return reps, nil
-	}
-
-	start := 0
-	offset := 0
-	for start < len(textContent) {
-		end := start + size
-		if end > len(textContent) {
-			end = len(textContent)
-		}
-
-		// Adjust end to word boundary (don't cut words in half)
-		if end < len(textContent) {
-			// Look backwards for a word boundary (space, newline, punctuation)
-			for end > start && !isWordBoundary(textContent[end]) {
-				end--
-			}
-			// If we couldn't find a word boundary, use the original end
-			if end == start {
-				end = start + size
-			}
-		}
-
-		chunk := textContent[start:end]
-		chunkID := ChunkID(relPath, "text", int64(offset))
-		reps = append(reps, Representation{
-			ID:       chunkID,
-			Path:     relPath,
-			Modality: "text",
-			Text:     chunk,
-			Meta: map[string]string{
-				"source": "TextLoader",
-				"offset": strconv.Itoa(start),
-				"path":   relPath, // Explicitly store path in meta
-			},
-		})
-
-		if end == len(textContent) {
-			break
-		}
-
-		// Calculate next start position with overlap, respecting word boundaries
-		nextStart := end - ov
-		if nextStart <= start {
-			nextStart = start + 1 // Ensure progress
-		}
-
-		// Adjust nextStart to word boundary
-		for nextStart < len(textContent) && !isWordBoundary(textContent[nextStart]) {
-			nextStart++
-		}
-
-		start = nextStart
-		offset++
-	}
+	reps := chunkTextGeneric(textContent, relPath, "TextLoader", 0, tl.chunkSize, tl.overlap)
 	slog.Debug("Created", "chunks", len(reps), "relPath", relPath)
 	return reps, nil
 }
 
-// isWordBoundary checks if a character is a word boundary
+// isWordBoundary checks if a byte is a word boundary.
+// Deprecated: use isRuneWordBoundary for correct UTF-8 handling.
 func isWordBoundary(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '.' || c == ',' || c == ';' || c == '!' || c == '?'
 }

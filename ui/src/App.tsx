@@ -61,7 +61,6 @@ function App() {
 		return () => { active = false; clearInterval(id) }
 	}, [])
 
-	console.log({ results })
 	// Initialize dark mode from localStorage
 	useEffect(() => {
 		const savedDarkMode = localStorage.getItem('darkMode') === 'true'
@@ -315,7 +314,7 @@ function App() {
 				{/* Empty State / Welcome State / API Docs */}
 				{!showApiDocs && !query && results.length === 0 && (
 					<div className="max-w-2xl mx-auto text-center py-12">
-						<h2 className="text-2xl font-bold mb-4">🥭 Welcome to Semango Search</h2>
+						<h2 className="text-2xl font-bold mb-4">Welcome to Semango Search</h2>
 						<p className="text-muted-foreground mb-8">
 							Search through your knowledge base using semantic search.
 							Find documents, code, images, and more with natural language queries.

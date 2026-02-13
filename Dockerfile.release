@@ -60,11 +60,11 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
-# Copy UI build
-COPY --from=ui-builder /build/ui/dist ./internal/api/ui/
-
 # Copy source code
 COPY . .
+
+# Copy UI build
+COPY --from=ui-builder /build/ui/dist ./internal/api/ui/
 
 # Build binary
 ARG VERSION=dev

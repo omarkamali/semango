@@ -37,6 +37,10 @@ runs:
         onnx-version: ${{ inputs.onnx-version }}
         os: ${{ inputs.os }}
 
+    - name: Clean UI directory
+      shell: bash
+      run: rm -rf internal/api/ui && mkdir -p internal/api/ui
+
     - name: Download UI artifacts
       uses: actions/download-artifact@v4
       with:
@@ -51,7 +55,7 @@ runs:
         export CGO_ENABLED=1
         export CGO_LDFLAGS="-L$(pwd)/libs -lonnxruntime"
         export CGO_CPPFLAGS="-I$(pwd)/include -I$(pwd)"
-        go build -ldflags "-s -w -X main.version=${{ inputs.version }}" -o semango.exe ./cmd/semango
+        go build -tags faiss -ldflags "-s -w -X main.version=${{ inputs.version }}" -o semango.exe ./cmd/semango
 
     - name: Build Binary (Posix)
       if: inputs.os != 'windows-latest'
