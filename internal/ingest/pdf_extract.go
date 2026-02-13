@@ -1,9 +1,11 @@
 package ingest
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/omarkamali/semango/internal/pdflib"
 )
@@ -14,6 +16,11 @@ type PDFExtractPage struct {
 	Page int    `json:"page"`
 	Text string `json:"text"`
 }
+
+// DefaultPageTimeout is the maximum time allowed for extracting a single PDF page.
+// If the parser hangs on a complex/malformed page, this prevents the process from
+// blocking forever.
+const DefaultPageTimeout = 2 * time.Minute
 
 // ExtractPDFPages streams plain text per page from a PDF.
 //
@@ -42,9 +49,10 @@ func ExtractPDFPages(absPath string, emit func(PDFExtractPage) error) error {
 		if p.V.IsNull() {
 			continue
 		}
-		text, err := p.GetPlainText(nil)
+		text, err := extractPageWithTimeout(p, DefaultPageTimeout)
 		if err != nil {
-			// Keep going; some pages may be malformed.
+			// Keep going; some pages may be malformed or slow.
+			fmt.Fprintf(os.Stderr, "WARN: page %d: %v\n", i, err)
 			continue
 		}
 		if text == "" {
@@ -59,6 +67,32 @@ func ExtractPDFPages(absPath string, emit func(PDFExtractPage) error) error {
 	}
 
 	return nil
+}
+
+// extractPageWithTimeout runs GetPlainText in a goroutine with a per-page deadline.
+// If the parser hangs (e.g. on a malformed content stream), we abandon that page
+// rather than blocking the entire extraction.
+func extractPageWithTimeout(p pdflib.Page, timeout time.Duration) (string, error) {
+	type result struct {
+		text string
+		err  error
+	}
+	ch := make(chan result, 1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	go func() {
+		text, err := p.GetPlainText(nil)
+		ch <- result{text, err}
+	}()
+
+	select {
+	case res := <-ch:
+		return res.text, res.err
+	case <-ctx.Done():
+		return "", fmt.Errorf("page extraction timed out after %v", timeout)
+	}
 }
 
 // RunPDFExtract is the entry point for the internal _pdf-extract command.

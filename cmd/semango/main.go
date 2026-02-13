@@ -149,8 +149,11 @@ var serverCmd = &cobra.Command{
 			return wrappedErr
 		}
 
+		// Create manager early so we can share its indexing status with the server.
+		mgr := pipeline.NewManager(AppConfig, searcher.Embedder())
+
 		// Create API server with nil UI filesystem (will use fallback)
-		server := api.NewServer(AppConfig, searcher, nil)
+		server := api.NewServer(AppConfig, searcher, nil, api.WithIndexingStatus(mgr.Status()))
 
 		// Create context for graceful shutdown
 		ctx, cancel := context.WithCancel(context.Background())
@@ -169,7 +172,6 @@ var serverCmd = &cobra.Command{
 				slog.Info("No index found, starting initial indexing...")
 			}
 
-			mgr := pipeline.NewManager(AppConfig, searcher.Embedder())
 			if err := mgr.RunReconciliation(ctx); err != nil {
 				slog.Error("Initial reconciliation failed", "error", err)
 			}

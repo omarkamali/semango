@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/omarkamali/semango/internal/config"
+	"github.com/omarkamali/semango/internal/pipeline"
 	"github.com/omarkamali/semango/internal/search"
 	"github.com/omarkamali/semango/internal/util"
 )
@@ -21,11 +22,12 @@ var uiFiles embed.FS
 
 // Server represents the HTTP API server
 type Server struct {
-	config   *config.Config
-	searcher *search.Searcher
-	router   *gin.Engine
-	logger   *slog.Logger
-	uiFS     fs.FS
+	config         *config.Config
+	searcher       *search.Searcher
+	router         *gin.Engine
+	logger         *slog.Logger
+	uiFS           fs.FS
+	indexingStatus *pipeline.IndexingStatus
 }
 
 // SearchRequest represents the search API request
@@ -62,7 +64,7 @@ type DocumentInfo struct {
 }
 
 // NewServer creates a new API server instance
-func NewServer(config *config.Config, searcher *search.Searcher, uiFS fs.FS) *Server {
+func NewServer(cfg *config.Config, searcher *search.Searcher, uiFS fs.FS, opts ...ServerOption) *Server {
 	// Use embedded UI files if no external FS provided
 	if uiFS == nil {
 		subFS, err := fs.Sub(uiFiles, "ui")
@@ -71,11 +73,23 @@ func NewServer(config *config.Config, searcher *search.Searcher, uiFS fs.FS) *Se
 		}
 	}
 
-	return &Server{
-		config:   config,
+	s := &Server{
+		config:   cfg,
 		searcher: searcher,
 		uiFS:     uiFS,
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
+
+// ServerOption configures optional Server dependencies.
+type ServerOption func(*Server)
+
+// WithIndexingStatus allows the server to expose live indexing progress.
+func WithIndexingStatus(status *pipeline.IndexingStatus) ServerOption {
+	return func(s *Server) { s.indexingStatus = status }
 }
 
 // setupRoutes configures all API routes
@@ -86,6 +100,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/search", s.handleSearch)
 		api.GET("/health", s.handleHealth)
 		api.GET("/stats", s.handleStats)
+		api.GET("/indexing-status", s.handleIndexingStatus)
 	}
 
 	// Serve embedded UI
@@ -258,6 +273,15 @@ func (s *Server) handleStats(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, stats)
+}
+
+// handleIndexingStatus returns live indexing progress.
+func (s *Server) handleIndexingStatus(c *gin.Context) {
+	if s.indexingStatus == nil {
+		c.JSON(http.StatusOK, gin.H{"active": false})
+		return
+	}
+	c.JSON(http.StatusOK, s.indexingStatus.Snapshot())
 }
 
 // Start starts the HTTP server

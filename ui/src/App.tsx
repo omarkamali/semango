@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Moon, Sun, FileText, Code, Image, Music, BookOpen } from 'lucide-react'
+import { Search, Moon, Sun, FileText, Code, Image, Music, BookOpen, Loader2 } from 'lucide-react'
 import { ApiDocs } from './components/ApiDocs'
 
 interface SearchResult {
@@ -21,6 +21,18 @@ interface SearchResponse {
 	took: string
 }
 
+interface IndexingStatus {
+	active: boolean
+	elapsed_ms?: number
+	files_total: number
+	files_queued: number
+	files_done: number
+	files_failed: number
+	current_file?: string
+	eta_ms?: number
+	progress: number
+}
+
 function App() {
 	const [query, setQuery] = useState('')
 	const [results, setResults] = useState<SearchResult[]>([])
@@ -29,6 +41,25 @@ function App() {
 	const [darkMode, setDarkMode] = useState(false)
 	const [searchTime, setSearchTime] = useState<string>('')
 	const [showApiDocs, setShowApiDocs] = useState(false)
+	const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null)
+
+	// Poll indexing status
+	useEffect(() => {
+		let active = true
+		const poll = async () => {
+			try {
+				const res = await fetch('/api/v1/indexing-status')
+				if (res.ok && active) {
+					setIndexingStatus(await res.json())
+				}
+			} catch {
+				// ignore fetch errors
+			}
+		}
+		poll()
+		const id = setInterval(poll, 2000)
+		return () => { active = false; clearInterval(id) }
+	}, [])
 
 	console.log({ results })
 	// Initialize dark mode from localStorage
@@ -114,13 +145,25 @@ function App() {
 		return `${(score * 100).toFixed(1)}%`
 	}
 
+	// Format milliseconds as human-readable duration
+	const formatMs = (ms: number) => {
+		if (ms < 1000) return '<1s'
+		const secs = Math.floor(ms / 1000)
+		if (secs < 60) return `${secs}s`
+		const mins = Math.floor(secs / 60)
+		const remSecs = secs % 60
+		if (mins < 60) return `${mins}m ${remSecs}s`
+		const hours = Math.floor(mins / 60)
+		const remMins = mins % 60
+		return `${hours}h ${remMins}m`
+	}
+
 	return (
 		<div className="min-h-screen bg-background text-foreground">
 			{/* Header */}
 			<header className="border-b border-border">
 				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
 					<div className="flex items-center space-x-4">
-						<span className="text-2xl font-bold">🥭</span>
 						<h1 className="text-xl font-bold">🥭 Semango</h1>
 					</div>
 					<div className="flex items-center space-x-2">
@@ -144,6 +187,35 @@ function App() {
 
 			{/* Main Content */}
 			<main className="container mx-auto px-4 py-8">
+				{/* Indexing Status Banner */}
+				{indexingStatus?.active && (
+					<div className="max-w-2xl mx-auto mb-6 p-4 bg-primary/10 border border-primary/20 rounded-lg">
+						<div className="flex items-center space-x-3 mb-2">
+							<Loader2 className="w-4 h-4 animate-spin text-primary" />
+							<span className="font-medium text-sm">Indexing in progress…</span>
+						</div>
+						<div className="w-full bg-muted rounded-full h-2 mb-2">
+							<div
+								className="bg-primary h-2 rounded-full transition-all duration-500"
+								style={{ width: `${Math.min(indexingStatus.progress * 100, 100)}%` }}
+							/>
+						</div>
+						<div className="flex justify-between text-xs text-muted-foreground">
+							<span>
+								{indexingStatus.files_done} / {indexingStatus.files_total} files
+								{indexingStatus.files_failed > 0 && ` (${indexingStatus.files_failed} failed)`}
+							</span>
+							{indexingStatus.eta_ms != null && indexingStatus.eta_ms > 0 && (
+								<span>ETA: {formatMs(indexingStatus.eta_ms)}</span>
+							)}
+							{indexingStatus.current_file && (
+								<span className="truncate max-w-[200px]" title={indexingStatus.current_file}>
+									{indexingStatus.current_file}
+								</span>
+							)}
+						</div>
+					</div>
+				)}
 				{/* Search Form (always visible unless API docs are shown) */}
 				{!showApiDocs && (
 					<form onSubmit={handleSearch} className="mb-8">
@@ -243,8 +315,7 @@ function App() {
 				{/* Empty State / Welcome State / API Docs */}
 				{!showApiDocs && !query && results.length === 0 && (
 					<div className="max-w-2xl mx-auto text-center py-12">
-						<div className="text-4xl font-bold mb-4">🥭</div>
-						<h2 className="text-2xl font-bold mb-4">Welcome to Semango Search 🥭</h2>
+						<h2 className="text-2xl font-bold mb-4">🥭 Welcome to Semango Search</h2>
 						<p className="text-muted-foreground mb-8">
 							Search through your knowledge base using semantic search.
 							Find documents, code, images, and more with natural language queries.

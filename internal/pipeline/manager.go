@@ -23,7 +23,80 @@ type Manager struct {
 	embedder ingest.Embedder
 	loaders  []ingest.Loader
 	fpStore  *FingerprintStore
+
+	// Shared indexing status – safe for concurrent reads from the API.
+	status IndexingStatus
 }
+
+// IndexingStatus tracks live indexing progress. Fields are read/written via
+// atomic operations so they are safe for concurrent access from the HTTP handler.
+type IndexingStatus struct {
+	Active      atomic.Bool
+	StartedAt   atomic.Int64 // UnixNano
+	FilesTotal  atomic.Int64
+	FilesQueued atomic.Int64
+	FilesDone   atomic.Int64
+	FilesFailed atomic.Int64
+	CurrentFile atomic.Value // string
+}
+
+// IndexingStatusSnapshot is a JSON-friendly snapshot of IndexingStatus.
+type IndexingStatusSnapshot struct {
+	Active      bool    `json:"active"`
+	ElapsedMs   int64   `json:"elapsed_ms,omitempty"`
+	FilesTotal  int64   `json:"files_total"`
+	FilesQueued int64   `json:"files_queued"`
+	FilesDone   int64   `json:"files_done"`
+	FilesFailed int64   `json:"files_failed"`
+	CurrentFile string  `json:"current_file,omitempty"`
+	EtaMs       int64   `json:"eta_ms,omitempty"`
+	Progress    float64 `json:"progress"` // 0.0 – 1.0
+}
+
+// Snapshot returns a point-in-time copy suitable for JSON serialisation.
+func (s *IndexingStatus) Snapshot() IndexingStatusSnapshot {
+	active := s.Active.Load()
+	started := s.StartedAt.Load()
+	queued := s.FilesQueued.Load()
+	done := s.FilesDone.Load()
+	failed := s.FilesFailed.Load()
+	total := s.FilesTotal.Load()
+
+	snap := IndexingStatusSnapshot{
+		Active:      active,
+		FilesTotal:  total,
+		FilesQueued: queued,
+		FilesDone:   done,
+		FilesFailed: failed,
+	}
+
+	if cur, ok := s.CurrentFile.Load().(string); ok {
+		snap.CurrentFile = cur
+	}
+
+	if active && started > 0 {
+		elapsed := time.Since(time.Unix(0, started))
+		snap.ElapsedMs = elapsed.Milliseconds()
+
+		processed := done + failed
+		if processed > 0 && queued > 0 {
+			avgPerFile := elapsed / time.Duration(processed)
+			remaining := queued - processed
+			if remaining > 0 {
+				snap.EtaMs = (avgPerFile * time.Duration(remaining)).Milliseconds()
+			}
+		}
+	}
+
+	if total > 0 {
+		snap.Progress = float64(done) / float64(total)
+	}
+
+	return snap
+}
+
+// Status returns the shared indexing status so the API server can read it.
+func (m *Manager) Status() *IndexingStatus { return &m.status }
 
 func NewManager(cfg *config.Config, embedder ingest.Embedder) *Manager {
 	pdfTimeout := time.Duration(cfg.Files.PDFTimeoutSeconds) * time.Second
@@ -111,18 +184,19 @@ func (m *Manager) ProcessFile(ctx context.Context, relPath, absPath string) erro
 	defer bleveIdx.Close()
 
 	faissPath := filepath.Join(filepath.Dir(m.cfg.Lexical.IndexPath), "faiss.index")
-	vecIdx, err := storage.NewFaissVectorIndex(ctx, faissPath, m.embedder.Dimension(), types.MetricInnerProduct)
-	if err != nil {
-		return err
+	vecIdx, vecErr := storage.NewFaissVectorIndex(ctx, faissPath, m.embedder.Dimension(), types.MetricInnerProduct)
+	if vecErr != nil {
+		slog.Warn("Vector index unavailable, indexing lexical only", "error", vecErr)
+	} else {
+		defer vecIdx.Close()
 	}
-	defer vecIdx.Close()
 
 	// Index loop
 	for _, r := range reps {
 		if err := bleveIdx.IndexDocument(r.ID, r.Text, r.Path, r.Meta); err != nil {
 			slog.Error("bleve index error", "id", r.ID, "err", err)
 		}
-		if r.Vector != nil {
+		if r.Vector != nil && vecIdx != nil {
 			if err := vecIdx.Upsert(ctx, r.ID, r.Vector); err != nil {
 				slog.Error("faiss upsert error", "id", r.ID, "err", err)
 			}
@@ -146,13 +220,16 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 
 	go ingest.Crawl(ctx, m.cfg.Files, filePathChan, errChan)
 
-	var filesStartedCount atomic.Int64
-	var filesProcessedCount atomic.Int64
-	var filesFailedCount atomic.Int64
-	var currentFile atomic.Value
-	currentFile.Store("")
-	var currentFileStart atomic.Int64
-	currentFileStart.Store(0)
+	// Reset shared status.
+	m.status.Active.Store(true)
+	m.status.StartedAt.Store(time.Now().UnixNano())
+	m.status.FilesTotal.Store(0)
+	m.status.FilesQueued.Store(0)
+	m.status.FilesDone.Store(0)
+	m.status.FilesFailed.Store(0)
+	m.status.CurrentFile.Store("")
+	defer m.status.Active.Store(false)
+
 	start := time.Now()
 	stopHeartbeat := make(chan struct{})
 	defer close(stopHeartbeat)
@@ -162,18 +239,13 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 		for {
 			select {
 			case <-ticker.C:
-				startNs := currentFileStart.Load()
-				fileElapsed := ""
-				if startNs > 0 {
-					fileElapsed = time.Since(time.Unix(0, startNs)).String()
-				}
+				cur, _ := m.status.CurrentFile.Load().(string)
 				slog.Info("Indexing heartbeat",
-					"started", filesStartedCount.Load(),
-					"processed", filesProcessedCount.Load(),
-					"failed", filesFailedCount.Load(),
+					"queued", m.status.FilesQueued.Load(),
+					"processed", m.status.FilesDone.Load(),
+					"failed", m.status.FilesFailed.Load(),
 					"elapsed", time.Since(start).String(),
-					"current_file", currentFile.Load(),
-					"current_file_elapsed", fileElapsed,
+					"current_file", cur,
 				)
 			case <-stopHeartbeat:
 				return
@@ -185,26 +257,28 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 
 	for relPath := range filePathChan {
 		if err := ctx.Err(); err != nil {
-			return int(filesProcessedCount.Load()), err
+			return int(m.status.FilesDone.Load()), err
 		}
 		absPath := filepath.Join(rootDir, relPath)
+
+		m.status.FilesTotal.Add(1)
 
 		// Skip files whose mtime+size haven't changed since last index.
 		if !m.fpStore.Changed(relPath, absPath) {
 			slog.Debug("Skipping unchanged file", "path", relPath)
+			m.status.FilesDone.Add(1)
 			continue
 		}
 
-		currentFile.Store(relPath)
-		currentFileStart.Store(time.Now().UnixNano())
-		filesStartedCount.Add(1)
+		m.status.FilesQueued.Add(1)
+		m.status.CurrentFile.Store(relPath)
 		if err := m.ProcessFile(ctx, relPath, absPath); err != nil {
 			slog.Error("Failed to process file", "path", relPath, "error", err)
-			filesFailedCount.Add(1)
+			m.status.FilesFailed.Add(1)
 			continue
 		}
 		m.fpStore.Record(relPath, absPath)
-		filesProcessedCount.Add(1)
+		m.status.FilesDone.Add(1)
 	}
 
 	if err := m.fpStore.Save(); err != nil {
@@ -214,13 +288,16 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 	select {
 	case err := <-errChan:
 		if err != nil {
-			return int(filesProcessedCount.Load()), err
+			return int(m.status.FilesDone.Load()), err
 		}
 	default:
 	}
 
-	slog.Info("Indexing process completed.", "files_started", filesStartedCount.Load(), "files_processed", filesProcessedCount.Load(), "files_failed", filesFailedCount.Load())
-	return int(filesProcessedCount.Load()), nil
+	slog.Info("Indexing process completed.",
+		"files_total", m.status.FilesTotal.Load(),
+		"files_processed", m.status.FilesDone.Load(),
+		"files_failed", m.status.FilesFailed.Load())
+	return int(m.status.FilesDone.Load()), nil
 }
 
 // RunReconciliation ensures the index is up to date with the filesystem.

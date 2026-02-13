@@ -92,17 +92,20 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int) ([]Result
 		return nil, fmt.Errorf("failed to embed query: %w", err)
 	}
 
-	// Open vector index
+	// Open vector index – gracefully fall back to lexical-only when FAISS
+	// is unavailable (e.g. binary built without the faiss build tag).
+	var vecResults []storage.VectorResult
 	faissPath := filepath.Join(filepath.Dir(s.config.Lexical.IndexPath), "faiss.index")
 	vecIdx, err := storage.NewFaissVectorIndex(ctx, faissPath, s.embedder.Dimension(), types.MetricInnerProduct)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open vector index: %w", err)
-	}
-	defer vecIdx.Close()
-
-	vecResults, err := vecIdx.Search(ctx, queryEmbedding[0], topK*2)
-	if err != nil {
-		return nil, fmt.Errorf("vector search failed: %w", err)
+		slog.Warn("Vector index unavailable, falling back to lexical-only search", "error", err)
+	} else {
+		defer vecIdx.Close()
+		vecResults, err = vecIdx.Search(ctx, queryEmbedding[0], topK*2)
+		if err != nil {
+			slog.Warn("Vector search failed, continuing with lexical results only", "error", err)
+			vecResults = nil
+		}
 	}
 
 	slog.Debug("Vector search results", "query", query, "hits", len(vecResults))
@@ -352,12 +355,14 @@ func (s *Searcher) GetStats(ctx context.Context) (*Stats, error) {
 		}
 	}
 
-	// Get FAISS stats
+	// Get FAISS stats (may fail gracefully when compiled without faiss tag)
 	dim := s.embedder.Dimension()
-	vecIdx, err := storage.NewFaissVectorIndex(ctx, stats.VectorPath, dim, types.MetricInnerProduct)
-	if err == nil {
+	vecIdx, vecErr := storage.NewFaissVectorIndex(ctx, stats.VectorPath, dim, types.MetricInnerProduct)
+	if vecErr == nil {
 		defer vecIdx.Close()
 		stats.VectorCount = vecIdx.Count()
+	} else {
+		slog.Debug("Vector index unavailable for stats", "error", vecErr)
 	}
 
 	// File sizes
