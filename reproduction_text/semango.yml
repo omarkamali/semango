@@ -1,0 +1,23 @@
+embedding:
+  provider: local
+  model: onnx-models/all-MiniLM-L6-v2-onnx
+  batch_size: 1
+  concurrent: 1
+  model_cache_dir: /root/.cache/semango
+
+lexical:
+  enabled: true
+  index_path: /app/reproduction_text/index/bleve
+
+files:
+  include:
+    - "reproduction_text/data/*.txt"
+  chunk_size: 20
+  chunk_overlap: 5
+
+server:
+  host: 0.0.0.0
+  port: 8282
+
+ui:
+  enabled: false

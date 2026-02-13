@@ -60,6 +60,7 @@ func newBuffer(r io.Reader, offset int64) *buffer {
 	}
 }
 
+//nolint:unused // used indirectly via seekForward; kept for direct seeking
 func (b *buffer) seek(offset int64) {
 	b.offset = offset
 	b.buf = b.buf[:0]

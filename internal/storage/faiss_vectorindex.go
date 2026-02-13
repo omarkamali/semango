@@ -87,9 +87,8 @@ func (f *FaissVectorIndex) Upsert(ctx context.Context, id string, vector []float
 	if err := f.fi.Add(ctx, vectors, ids); err != nil {
 		return err
 	}
-	// Persist to disk after each upsert for now; could batch in future.
-	f.persistMap()
-	return f.fi.Save(ctx)
+	// Map and index are persisted on Close(); no need to save per-upsert.
+	return nil
 }
 
 func (f *FaissVectorIndex) Search(ctx context.Context, query []float32, topK int) ([]VectorResult, error) {

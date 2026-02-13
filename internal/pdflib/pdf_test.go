@@ -36,6 +36,9 @@ SUBTITLE`
 func Test_ReadPdf_v17_linarized_xrefStream(t *testing.T) {
 
 	testFile := "./testdata/story_Word2019-2312-1601712620132-32_Print-Adobe__pdf15_linarized_xrefStream.pdf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("skipping test; testdata missing")
+	}
 	totalPages, content := readPdfAndGetFirstPageAsText(testFile)
 	if totalPages != 5 {
 		t.Error("Asser: incorrect numPage .. want=5 <> got " + strconv.Itoa(totalPages))
@@ -48,6 +51,9 @@ func Test_ReadPdf_v17_linarized_xrefStream(t *testing.T) {
 func Test_ReadPdf_v17_linarized_xref(t *testing.T) {
 
 	testFile := "./testdata/story_avepdf-com__pdf17_linarized_xref.pdf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("skipping test; testdata missing")
+	}
 	totalPages, content := readPdfAndGetFirstPageAsText(testFile)
 	if totalPages != 5 {
 		t.Error("Asser: incorrect numPage .. want=5 <> got " + strconv.Itoa(totalPages))
@@ -67,6 +73,9 @@ func Test_ReadPdf_v17_linarized_xref(t *testing.T) {
 func Test_ReadPdf_v17_trailer_arrayAtPageContents(t *testing.T) {
 
 	testFile := "./testdata/story_Word2019-2312-1712620132_Print-Microsoft__pdf17_trailer_array-at-page-contents.pdf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("skipping test; testdata missing")
+	}
 	totalPages, content := readPdfAndGetFirstPageAsText(testFile)
 	if totalPages != 5 {
 		t.Error("Asser: incorrect numPage .. want=5 <> got " + strconv.Itoa(totalPages))
@@ -79,6 +88,9 @@ func Test_ReadPdf_v17_trailer_arrayAtPageContents(t *testing.T) {
 func Test_ReadPdf_v17_StandardPDFA_trailer(t *testing.T) {
 
 	testFile := "./testdata/story_Word2019-2312-1712620132_SaveAs-Standard-PDFA__pdf17_trailer.pdf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("skipping test; testdata missing")
+	}
 	totalPages, content := readPdfAndGetFirstPageAsText(testFile)
 	if totalPages != 5 {
 		t.Error("Asser: incorrect numPage .. want=5 <> got " + strconv.Itoa(totalPages))
@@ -91,6 +103,9 @@ func Test_ReadPdf_v17_StandardPDFA_trailer(t *testing.T) {
 func Test_ReadPdf_v17_MinSizePDFA_trailer(t *testing.T) {
 
 	testFile := "./testdata/story_Word2019-2312-1712620132_SaveAs-MinSize-PDFA__pdf17_trailer.pdf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("skipping test; testdata missing")
+	}
 	totalPages, content := readPdfAndGetFirstPageAsText(testFile)
 	if totalPages != 5 {
 		t.Error("Asser: incorrect if totalPages != 5 { .. want=5 <> got " + strconv.Itoa(totalPages))
@@ -103,6 +118,9 @@ func Test_ReadPdf_v17_MinSizePDFA_trailer(t *testing.T) {
 func Test_ReadPdf_v17_StandardNoPDFA_2trailer(t *testing.T) {
 
 	testFile := "./testdata/story_Word2019-2312-1712620132_SaveAs-Standard-NoPDFA__pdf17_2trailer.pdf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("skipping test; testdata missing")
+	}
 	totalPages, content := readPdfAndGetFirstPageAsText(testFile)
 	if totalPages != 5 {
 		t.Error("Asser: incorrect totalPages .. want=5 <> got " + strconv.Itoa(totalPages))
@@ -115,6 +133,9 @@ func Test_ReadPdf_v17_StandardNoPDFA_2trailer(t *testing.T) {
 func Test_ReadPdf_v17_MinSizeNoPDFA_2trailer(t *testing.T) {
 
 	testFile := "./testdata/story_Word2019-2312-1712620132_SaveAs-MinSize-NoPDFA__pdf17_2trailer.pdf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("skipping test; testdata missing")
+	}
 	totalPages, content := readPdfAndGetFirstPageAsText(testFile)
 	if totalPages != 5 {
 		t.Error("Asser: incorrect totalPages .. want=5 <> got " + strconv.Itoa(totalPages))
@@ -251,8 +272,14 @@ fmt.Println(". totalPage = ", totalPage)
 //
 func walkDir(root, fileSuffix string) ([]string, error) {
     var files []string
+    if _, err := os.Stat(root); os.IsNotExist(err) {
+        return nil, nil
+    }
     err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-        if !info.IsDir() && strings.HasSuffix(path, fileSuffix) {
+        if err != nil {
+            return err
+        }
+        if info != nil && !info.IsDir() && strings.HasSuffix(path, fileSuffix) {
             files = append(files, path)
         }
         return nil

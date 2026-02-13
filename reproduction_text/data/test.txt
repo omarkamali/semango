@@ -1,0 +1,5 @@
+This is a test file.
+It has multiple lines.
+  It also has leading spaces.
+And it has    multiple    spaces    between    words.
+Let's see if they are preserved.

@@ -937,7 +937,6 @@ func (p Page) readContent(strm Value) Content {
 					if x.Kind() == String {
 						if i == v.Len()-1 {
 							showText(x.RawString())
-							op = "BT"
 							continue
 						} else {
 							showText(x.RawString())

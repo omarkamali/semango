@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"context"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -13,8 +14,8 @@ import (
 
 // Crawl scans the filesystem. It sends file paths to filePathChan and
 // a single error to errChan if the walk terminates due to an error or initial setup fails.
-// It always closes filePathChan.
-func Crawl(cfg config.FilesConfig, filePathChan chan<- string, errChan chan<- error) {
+// It always closes filePathChan.  The supplied context can cancel the walk early.
+func Crawl(ctx context.Context, cfg config.FilesConfig, filePathChan chan<- string, errChan chan<- error) {
 	defer close(filePathChan)
 
 	slog.Info("Starting filesystem crawl...", "include", cfg.Include, "exclude", cfg.Exclude)
@@ -31,6 +32,9 @@ func Crawl(cfg config.FilesConfig, filePathChan chan<- string, errChan chan<- er
 	slog.Debug("Crawling directory", "root", rootDir)
 
 	walkErr := filepath.WalkDir(rootDir, func(absPath string, d fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			slog.Warn("Error accessing path during walk", "path", absPath, "error", err)
 			return err // Propagate error, WalkDir might stop or skip based on this.

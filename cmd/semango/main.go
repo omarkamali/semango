@@ -221,13 +221,28 @@ var indexCmd = &cobra.Command{
 			return util.NewError("Configuration not loaded before index command")
 		}
 
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigChan
+			slog.Info("Received shutdown signal, stopping indexing...")
+			cancel()
+		}()
+
 		embedder, err := ingest.NewEmbedderFromConfig(AppConfig.Embedding)
 		if err != nil {
 			return util.WrapError(err, "Failed to initialize embedder")
 		}
 
 		mgr := pipeline.NewManager(AppConfig, embedder)
-		if err := mgr.RunReconciliation(context.Background()); err != nil {
+		if err := mgr.RunReconciliation(ctx); err != nil {
+			if ctx.Err() != nil {
+				slog.Info("Indexing cancelled.")
+				return nil
+			}
 			return util.WrapError(err, "Reconciliation failed")
 		}
 
@@ -380,6 +395,19 @@ var mcpStdioCmd = &cobra.Command{
 		if AppConfig == nil {
 			return util.NewError("Configuration not loaded. Pass --config path.")
 		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigChan
+			slog.Info("Received shutdown signal, stopping MCP stdio server...")
+			cancel()
+		}()
+		_ = ctx // MCP server will be updated to use ctx in the future
+
 		searcher, err := search.NewSearcher(AppConfig)
 		if err != nil {
 			return util.WrapError(err, "Failed to initialize searcher for MCP")
@@ -399,6 +427,18 @@ var mcpSSECmd = &cobra.Command{
 		port, _ := cmd.Flags().GetInt("port")
 		host, _ := cmd.Flags().GetString("host")
 		addr := fmt.Sprintf("%s:%d", host, port)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigChan
+			slog.Info("Received shutdown signal, stopping MCP SSE server...")
+			cancel()
+		}()
+		_ = ctx // MCP server will be updated to use ctx in the future
 
 		searcher, err := search.NewSearcher(AppConfig)
 		if err != nil {

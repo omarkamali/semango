@@ -22,6 +22,7 @@ type Manager struct {
 	cfg      *config.Config
 	embedder ingest.Embedder
 	loaders  []ingest.Loader
+	fpStore  *FingerprintStore
 }
 
 func NewManager(cfg *config.Config, embedder ingest.Embedder) *Manager {
@@ -33,6 +34,9 @@ func NewManager(cfg *config.Config, embedder ingest.Embedder) *Manager {
 	if pdfHeartbeat == 0 {
 		pdfHeartbeat = 30 * time.Second
 	}
+
+	// Fingerprint store lives next to the lexical index.
+	fpPath := filepath.Join(filepath.Dir(cfg.Lexical.IndexPath), "file_fingerprints.json")
 
 	ls := []ingest.Loader{
 		ingest.NewTextLoader(cfg.Files.ChunkSize, cfg.Files.ChunkOverlap),
@@ -50,7 +54,7 @@ func NewManager(cfg *config.Config, embedder ingest.Embedder) *Manager {
 		tabular.NewSQLiteLoader(cfg.Tabular),
 		tabular.NewExcelLoader(cfg.Tabular),
 	}
-	return &Manager{cfg: cfg, embedder: embedder, loaders: ls}
+	return &Manager{cfg: cfg, embedder: embedder, loaders: ls, fpStore: NewFingerprintStore(fpPath)}
 }
 
 func (m *Manager) loaderForExt(ext string) ingest.Loader {
@@ -140,7 +144,7 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 	filePathChan := make(chan string, 100)
 	errChan := make(chan error, 1)
 
-	go ingest.Crawl(m.cfg.Files, filePathChan, errChan)
+	go ingest.Crawl(ctx, m.cfg.Files, filePathChan, errChan)
 
 	var filesStartedCount atomic.Int64
 	var filesProcessedCount atomic.Int64
@@ -183,16 +187,28 @@ func (m *Manager) RunIndexing(ctx context.Context) (int, error) {
 		if err := ctx.Err(); err != nil {
 			return int(filesProcessedCount.Load()), err
 		}
+		absPath := filepath.Join(rootDir, relPath)
+
+		// Skip files whose mtime+size haven't changed since last index.
+		if !m.fpStore.Changed(relPath, absPath) {
+			slog.Debug("Skipping unchanged file", "path", relPath)
+			continue
+		}
+
 		currentFile.Store(relPath)
 		currentFileStart.Store(time.Now().UnixNano())
 		filesStartedCount.Add(1)
-		absPath := filepath.Join(rootDir, relPath)
 		if err := m.ProcessFile(ctx, relPath, absPath); err != nil {
 			slog.Error("Failed to process file", "path", relPath, "error", err)
 			filesFailedCount.Add(1)
 			continue
 		}
+		m.fpStore.Record(relPath, absPath)
 		filesProcessedCount.Add(1)
+	}
+
+	if err := m.fpStore.Save(); err != nil {
+		slog.Error("Failed to persist fingerprint store", "err", err)
 	}
 
 	select {
@@ -239,12 +255,14 @@ func (m *Manager) RunReconciliation(ctx context.Context) error {
 			if err := bleveIdx.Delete(id); err != nil {
 				slog.Error("Failed to delete from bleve", "id", id, "err", err)
 			}
+			m.fpStore.Remove(relPath)
 			deletedCount++
 			// Note: We skip FAISS deletion for now as it's not easily supported by go-faiss
 		}
 	}
 
 	if deletedCount > 0 {
+		_ = m.fpStore.Save()
 		slog.Info("Cleanup completed", "deleted_docs", deletedCount)
 	}
 

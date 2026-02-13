@@ -9,6 +9,30 @@ import (
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	// If the binary is run with the internal _pdf-extract command, handle it.
+	// This happens during tests because PDFLoader calls os.Executable() to run the extraction in a subprocess.
+	for i, arg := range os.Args {
+		if arg == "_pdf-extract" {
+			var absPath string
+			for j := i + 1; j < len(os.Args); j++ {
+				if os.Args[j] == "--abs" && j+1 < len(os.Args) {
+					absPath = os.Args[j+1]
+					break
+				}
+			}
+			if absPath != "" {
+				if err := RunPDFExtract(absPath); err != nil {
+					fmt.Fprintf(os.Stderr, "internal _pdf-extract failed: %v\n", err)
+					os.Exit(1)
+				}
+				os.Exit(0)
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
 func TestPDFLoader_Load(t *testing.T) {
 	loader := NewPDFLoader(100, 10)
 

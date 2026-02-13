@@ -127,11 +127,13 @@ Reading:
 	}
 }
 
+//nolint:unused // retained for potential PDF stream processing
 type seqReader struct {
 	rd     io.Reader
 	offset int64
 }
 
+//nolint:unused // retained for potential PDF stream processing
 func (r *seqReader) ReadAt(buf []byte, offset int64) (int, error) {
 	if offset != r.offset {
 		return 0, fmt.Errorf("non-sequential read of stream")

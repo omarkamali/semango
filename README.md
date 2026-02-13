@@ -11,11 +11,14 @@ Website & docs: https://semango.org
 ## Features
 
 - **Hybrid Search**: Combines BM25 lexical search (Bleve) with vector similarity (FAISS)
-- **Multi-format Ingestion**: Markdown/text, code (plain text), PDFs, CSV/JSON/JSONL
+- **Multi-format Ingestion**: Markdown/text, code (plain text), PDFs, CSV/JSON/JSONL, Parquet, SQLite, Excel
+- **Incremental Indexing**: Only re-indexes files that have changed (by mtime + size), making subsequent runs near-instant
 - **Embedding Providers**: OpenAI-compatible API or local ONNX models
 - **GPU Acceleration**: Built-in support for CUDA-accelerated local embeddings
+- **MCP Server**: Model Context Protocol support for LLM tool-use (stdio and SSE transports)
 - **Web UI**: Embedded React-based search interface with dark mode
 - **REST API**: Lightweight HTTP API for programmatic access
+- **Graceful Shutdown**: Clean Ctrl+C handling across all commands
 - **Single Binary**: Self-contained executable with embedded UI assets
 
 ## Installation
@@ -54,7 +57,7 @@ semango init
 # 2. Index your content
 semango index
 
-# 3. Start the server
+# 3. Start the server (includes web UI + auto-reconciliation)
 semango server
 ```
 
@@ -65,6 +68,23 @@ curl -X POST http://localhost:8181/search \
   -H "Authorization: Bearer your-secret-token" \
   -H "Content-Type: application/json" \
   -d '{"query": "how does authentication work", "top_k": 5}'
+```
+
+### CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `semango init` | Create a default `semango.yml` config file |
+| `semango index` | Index files (incremental — skips unchanged files) |
+| `semango index stats` | Show indexing statistics (document counts) |
+| `semango search <query>` | Search from the command line |
+| `semango server` | Start the HTTP server with UI and periodic reconciliation |
+| `semango mcp stdio` | Start an MCP server over stdin/stdout |
+| `semango mcp sse` | Start an MCP server over HTTP/SSE |
+| `semango models list` | List available local ONNX models |
+| `semango version` | Print version information |
+
+> **Tip:** Running `semango index` a second time without file changes completes instantly — only modified files are re-embedded and re-indexed.
 ```
 
 ## Configuration
@@ -116,11 +136,24 @@ See [docs/SEMANGO_GUIDE.md](docs/SEMANGO_GUIDE.md) for the complete configuratio
 
 You can also customize which environment variables Semango looks for by setting `api_key_env` or `base_url_env` in your `semango.yml`.
 
+## MCP (Model Context Protocol)
+
+Semango can act as an [MCP](https://modelcontextprotocol.io/) server, letting LLMs use your indexed content as a search tool:
+
+```bash
+# stdio transport (for Claude Desktop, etc.)
+semango mcp stdio --config semango.yml
+
+# SSE transport (HTTP-based, for remote clients)
+semango mcp sse --host 0.0.0.0 --port 8080 --config semango.yml
+```
+
 ## Documentation
 
 - https://semango.org/guide/
-- [Local Embeddings](docs/LOCAL_EMBEDDER.md) - Using local ONNX models
-- [Tabular Data](docs/tabular.md) - Ingesting CSV/JSON/JSONL files
+- [Local Embeddings](docs/LOCAL_EMBEDDER.md) — Using local ONNX models
+- [Tabular Data](docs/tabular.md) — Ingesting CSV/JSON/JSONL/Parquet/SQLite/Excel files
+- [MCP Integration](docs/guide/mcp.md) — Using Semango with LLMs
 
 Online: https://semango.org
 

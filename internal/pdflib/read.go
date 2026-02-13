@@ -70,7 +70,6 @@ import (
 	"encoding/ascii85"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"sort"
 	"strconv"
@@ -94,6 +93,7 @@ type xref struct {
 	offset   int64
 }
 
+//nolint:unused // kept for error reporting callback (see BUG note above)
 func (r *Reader) errorf(format string, args ...interface{}) {
 	panic(fmt.Errorf(format, args...))
 }
@@ -125,14 +125,18 @@ func NewReader(f io.ReaderAt, size int64) (*Reader, error) {
 // the file and returns an error.
 func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, error) {
 	buf := make([]byte, 10)
-	f.ReadAt(buf, 0)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		return nil, fmt.Errorf("not a PDF file: cannot read header: %w", err)
+	}
 	if !bytes.HasPrefix(buf, []byte("%PDF-1.")) || buf[7] < '0' || buf[7] > '7' || buf[8] != '\r' && buf[8] != '\n' {
 		return nil, fmt.Errorf("not a PDF file: invalid header")
 	}
 	end := size
 	const endChunk = 100
 	buf = make([]byte, endChunk)
-	f.ReadAt(buf, end-endChunk)
+	if _, err := f.ReadAt(buf, end-endChunk); err != nil {
+		return nil, fmt.Errorf("not a PDF file: cannot read trailer: %w", err)
+	}
 	for len(buf) > 0 && buf[len(buf)-1] == '\n' || buf[len(buf)-1] == '\r' {
 		buf = buf[:len(buf)-1]
 	}
@@ -772,7 +776,7 @@ func (r *Reader) resolve(parent objptr, x interface{}) Value {
 					id, _ := b.readToken().(int64)
 					off, _ := b.readToken().(int64)
 					if uint32(id) == ptr.id {
-						b.seekForward(first + off)
+						_ = b.seekForward(first + off)
 						objinstream, err := b.readObject()
 						if err != nil {
 							return Value{}
@@ -814,8 +818,7 @@ func (r *Reader) resolve(parent objptr, x interface{}) Value {
 	case string:
 		return Value{r, parent, x}
 	default:
-		// panic(fmt.Errorf("unexpected value type %T in resolve", x))
-		fmt.Sprintf("unexpected value type %T in resolve", x)
+		// unexpected value type; return empty value
 		return Value{}
 	}
 }
@@ -860,7 +863,7 @@ func (v Value) Reader() io.ReadCloser {
 		}
 	}
 
-	return ioutil.NopCloser(rd)
+	return io.NopCloser(rd)
 }
 
 func applyFilter(rd io.Reader, name string, param Value) io.Reader {
@@ -1061,7 +1064,7 @@ func okayV4(encrypt dict) bool {
 	if stmf != strf {
 		return false
 	}
-	cfparam, ok := cf[stmf].(dict)
+	cfparam, _ := cf[stmf].(dict)
 	if cfparam["AuthEvent"] != nil && cfparam["AuthEvent"] != name("DocOpen") {
 		return false
 	}
@@ -1105,7 +1108,9 @@ func decryptStream(key []byte, useAES bool, ptr objptr, rd io.Reader) io.Reader 
 			panic("AES: " + err.Error())
 		}
 		iv := make([]byte, 16)
-		io.ReadFull(rd, iv)
+		if _, err := io.ReadFull(rd, iv); err != nil {
+			panic("AES: failed to read IV: " + err.Error())
+		}
 		cbc := cipher.NewCBCDecrypter(cb, iv)
 		rd = &cbcReader{cbc: cbc, rd: rd, buf: make([]byte, 16)}
 	} else {
