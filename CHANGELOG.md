@@ -5,8 +5,14 @@ All notable changes to Semango will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-02-13
 
+### Fixed
+
+- Resolved UI layout artifacts (double mangos)
+- Fixed FAISS support in Windows CI builds
+- Resolved stale UI assets issue in CI and production binaries
+- Fixed UTF-8 text mangling in indexing pipeline
 ### Changed
 - **Unified Model Configuration**: Merged `local_model_path` into the `model` property for both `embedding` and `reranker`.
 - **Hugging Face Mirroring**: Local model downloads now preserve their repository directory structure (e.g., `author/repo/`) and can automatically pull from Huggingface.
@@ -14,12 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Flexible Environment Variables**: Added `api_key_env` and `base_url_env` to customize which environment variables are used for API secrets and endpoints (defaults to `OPENAI_API_KEY` and `OPENAI_BASE_URL`).
 
 ### Added
+- Added per-page timeouts for PDF extraction
+- Added graceful shutdown handling for server and crawler
+- Implemented incremental indexing with FingerprintStore
+- Added version and commit metadata to UI footer
+- Added indexing progress reporting to the UI
 - Initial public release preparation
 - GitHub Actions CI/CD workflows
 - GoReleaser configuration for cross-platform builds
 - Production Dockerfile for containerized deployment
 
-## [0.1.0] - 2024-12-13
+## [0.1.0] - 2025-12-13
 
 ### Added
 - **Hybrid Search Engine**: Combined lexical (BM25 via Bleve) and semantic (FAISS vector) search
