@@ -5,6 +5,14 @@ inputs:
   node-version:
     description: 'Node.js version'
     required: true
+  version:
+    description: 'Build version'
+    required: false
+    default: 'dev'
+  commit:
+    description: 'Commit hash'
+    required: false
+    default: 'unknown'
 
 runs:
   using: 'composite'
@@ -24,4 +32,4 @@ runs:
     - name: Build UI
       shell: bash
       working-directory: ui
-      run: yarn build
+      run: VITE_APP_VERSION=${{ inputs.version }} VITE_APP_COMMIT=${{ inputs.commit }} yarn build

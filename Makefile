@@ -113,7 +113,7 @@ test: onnx-embed
 ui-build:
 	@echo "Building React UI..."
 	@cd $(UI_DIR) && yarn install --frozen-lockfile
-	@cd $(UI_DIR) && yarn build
+	@cd $(UI_DIR) && VITE_APP_VERSION=$(VERSION) VITE_APP_COMMIT=$(COMMIT) yarn build
 	@echo "React UI built successfully."
 
 # Copy UI build to embed location

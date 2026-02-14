@@ -12,7 +12,9 @@ COPY ui/package.json ui/yarn.lock ./
 RUN yarn install --frozen-lockfile --production=false
 
 COPY ui/ ./
-RUN yarn build
+ARG VERSION=dev
+ARG COMMIT=unknown
+RUN VITE_APP_VERSION=${VERSION} VITE_APP_COMMIT=${COMMIT} yarn build
 
 # ============================================
 # Stage 2: Build Go binary

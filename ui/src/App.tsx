@@ -158,7 +158,7 @@ function App() {
 	}
 
 	return (
-		<div className="min-h-screen bg-background text-foreground">
+		<div className="min-h-screen bg-background text-foreground flex flex-col">
 			{/* Header */}
 			<header className="border-b border-border">
 				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
@@ -339,6 +339,17 @@ function App() {
 					</div>
 				)}
 			</main>
+
+			{/* Footer with version info */}
+			<footer className="border-t border-border py-4 mt-auto">
+				<div className="container mx-auto px-4 flex justify-between items-center text-xs text-muted-foreground">
+					<div>© {new Date().getFullYear()} Semango</div>
+					<div className="flex space-x-4">
+						<span>Version: {import.meta.env.VITE_APP_VERSION || 'dev'}</span>
+						<span>Commit: {import.meta.env.VITE_APP_COMMIT || 'unknown'}</span>
+					</div>
+				</div>
+			</footer>
 		</div>
 	)
 }

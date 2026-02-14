@@ -54,22 +54,44 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Compute build meta
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT=$(git rev-parse --short HEAD || echo "unknown")
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="dev"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "commit=${COMMIT}" >> "$GITHUB_OUTPUT"
+
       - name: Build UI
         uses: ./.github/actions/build-ui
         with:
           node-version: ${{ env.NODE_VERSION }}
+          version: ${{ steps.meta.outputs.version }}
+          commit: ${{ steps.meta.outputs.commit }}
 
-      - name: Compute version
-        id: vars
+      - name: UI dist fingerprint
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            TAG="${GITHUB_REF_NAME}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=dev" >> "$GITHUB_OUTPUT"
+          echo "## UI dist fingerprint" >> "$GITHUB_STEP_SUMMARY"
+          if [[ ! -d ui/dist ]]; then
+            echo "ERROR: ui/dist missing after UI build" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
+          (cd ui/dist && find . -type f -print0 | sort -z | xargs -0 sha256sum) | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Export version
+        id: vars
+        shell: bash
+        run: |
+          echo "version=${{ steps.meta.outputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Upload UI artifacts
         uses: actions/upload-artifact@v4

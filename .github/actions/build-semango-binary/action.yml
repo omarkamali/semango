@@ -47,6 +47,51 @@ runs:
         name: ${{ inputs.ui-artifact-name }}
         path: internal/api/ui
 
+    - name: Normalize UI artifact layout
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -f internal/api/ui/index.html ]]; then
+          echo "UI layout OK (index.html at internal/api/ui/index.html)"
+          exit 0
+        fi
+
+        # Some upload/download combinations preserve parent folders.
+        # Flatten common shapes back into the embed root.
+        if [[ -f internal/api/ui/dist/index.html ]]; then
+          echo "Flattening internal/api/ui/dist -> internal/api/ui"
+          shopt -s dotglob
+          mv internal/api/ui/dist/* internal/api/ui/
+          rm -rf internal/api/ui/dist
+          exit 0
+        fi
+
+        if [[ -f internal/api/ui/ui/dist/index.html ]]; then
+          echo "Flattening internal/api/ui/ui/dist -> internal/api/ui"
+          shopt -s dotglob
+          mv internal/api/ui/ui/dist/* internal/api/ui/
+          rm -rf internal/api/ui/ui
+          exit 0
+        fi
+
+        echo "ERROR: UI artifact missing index.html in expected locations"
+        echo "Contents of internal/api/ui (maxdepth=4):"
+        find internal/api/ui -maxdepth 4 -type f | sort
+        exit 1
+
+    - name: Verify downloaded UI artifact
+      shell: bash
+      run: |
+        set -euo pipefail
+        test -f internal/api/ui/index.html
+        test -d internal/api/ui/assets
+
+        # Ensure the UI we embed actually has the indexing progress polling.
+        # This catches stale UI bundles silently being packaged.
+        grep -R "\/api\/v1\/indexing-status" internal/api/ui/assets/*.js >/dev/null
+
+        echo "UI artifact looks valid"
+
     - name: Build Binary (Windows)
       if: inputs.os == 'windows-latest'
       shell: bash
