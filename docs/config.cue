@@ -24,6 +24,7 @@ package config
 	model_cache_dir:  string | *"~/.cache/semango" // Default added to satisfy concreteness
 	onnx_output_name?: string // Optional
 	gpu?:              bool | *true
+	dim?:              int
 	api_key?:         string
 	api_key_env?:     string
 	base_url?:        string

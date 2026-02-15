@@ -45,6 +45,7 @@ func NewEmbedderFromConfig(cfg config.EmbeddingConfig) (Embedder, error) {
 			APIKey:     apiKey,
 			BaseURL:    baseURL,
 			Model:      cfg.Model,
+			Dimension:  cfg.Dimension,
 			BatchSize:  cfg.BatchSize,
 			Concurrent: cfg.Concurrent,
 		}
@@ -60,6 +61,7 @@ func NewEmbedderFromConfig(cfg config.EmbeddingConfig) (Embedder, error) {
 			MaxLength:  512, // Default max length
 			OutputName: cfg.OnnxOutputName,
 			EnableGPU:  cfg.GPU,
+			Dimension:  cfg.Dimension,
 		}
 		// Validate configuration
 		if err := ValidateModelConfig(localCfg); err != nil {

@@ -68,6 +68,7 @@ tabular:
 ### `embedding`
 - `provider`: `local` or `openai`.
 - `model`: local ONNX model ID or OpenAI model name.
+- `dim`: (Optional) Manual dimension override. Supports truncation for Matryoshka-compatible models.
 - `batch_size`, `concurrent`: throughput controls.
 - `model_cache_dir`: where ONNX models are stored.
 - `api_key`, `api_key_env`, `base_url`, `base_url_env`: used for `openai` provider.

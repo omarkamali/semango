@@ -26,11 +26,13 @@ import (
 // LocalEmbedder implements the Embedder interface using local ONNX models.
 // It supports sentence transformer models from the onnx-models organization on Hugging Face.
 type LocalEmbedder struct {
-	modelDir       string
-	modelOnnxPath  string
-	dimension      int
-	maxLength      int
-	batchSize      int
+	modelDir               string
+	modelOnnxPath          string
+	dimension              int // Final dimension
+	modelDimension         int // Actual dimension from model
+	dimensionUserSpecified bool
+	maxLength              int
+	batchSize              int
 	tokenizer      *Tokenizer
 	session        *onnxruntime_go.DynamicAdvancedSession
 	inputNames     []string
@@ -50,6 +52,7 @@ type LocalEmbedderConfig struct {
 	ModelName  string // Specific model name (e.g., "all-MiniLM-L6-v2-onnx")
 	OutputName string // Manually specified output name
 	EnableGPU  bool   // Whether to enable GPU acceleration
+	Dimension  int    // Optional: force a specific embedding dimension
 }
 
 // Tokenizer handles text tokenization for sentence transformers.
@@ -106,9 +109,11 @@ func NewLocalEmbedder(config LocalEmbedderConfig) (*LocalEmbedder, error) {
 	}
 
 	embedder := &LocalEmbedder{
-		batchSize: config.BatchSize,
-		maxLength: config.MaxLength,
-		enableGPU: config.EnableGPU,
+		batchSize:              config.BatchSize,
+		maxLength:              config.MaxLength,
+		enableGPU:              config.EnableGPU,
+		dimension:              config.Dimension,
+		dimensionUserSpecified: config.Dimension > 0,
 	}
 
 	modelDir, modelOnnxPath, err := embedder.resolveModelLocation(config.ModelPath, config.CacheDir)
@@ -132,7 +137,9 @@ func NewLocalEmbedder(config LocalEmbedderConfig) (*LocalEmbedder, error) {
 		return nil, fmt.Errorf("failed to load pooling config: %w", err)
 	}
 	embedder.poolingConfig = poolingConfig
-	embedder.dimension = poolingConfig.WordEmbeddingDimension
+	if embedder.dimension <= 0 {
+		embedder.dimension = poolingConfig.WordEmbeddingDimension
+	}
 
 	// Initialize ONNX Runtime environment if not already done
 	if !onnxruntime_go.IsInitialized() {
@@ -727,13 +734,26 @@ func (le *LocalEmbedder) initONNXSession(modelOnnxPath string, outputName string
 	}
 	le.inputNames = inputNames
 
-	// Determine if output is pooled
+	// Determine if output is pooled and get model dimension
 	for _, info := range outputsInfo {
 		if info.Name == outputName {
 			if len(info.Dimensions) == 2 {
 				le.outputIsPooled = true
+				if len(info.Dimensions) > 1 {
+					le.modelDimension = int(info.Dimensions[1])
+				}
+			} else if len(info.Dimensions) >= 3 {
+				le.modelDimension = int(info.Dimensions[len(info.Dimensions)-1])
 			}
 			break
+		}
+	}
+
+	// Finalize dimension if still needed or if we should respect model more than hardcoded default
+	if le.modelDimension > 0 {
+		// If user didn't specify a dimension, believe model's real dimension over our guesses/defaults
+		if !le.dimensionUserSpecified {
+			le.dimension = le.modelDimension
 		}
 	}
 
@@ -1030,9 +1050,9 @@ func (le *LocalEmbedder) runInference(inputIDs, attentionMasks [][]int64) ([][][
 	// Create output tensor based on output type
 	var outputShape onnxruntime_go.Shape
 	if le.outputIsPooled {
-		outputShape = onnxruntime_go.NewShape(int64(batchSize), int64(le.dimension))
+		outputShape = onnxruntime_go.NewShape(int64(batchSize), int64(le.modelDimension))
 	} else {
-		outputShape = onnxruntime_go.NewShape(int64(batchSize), int64(seqLength), int64(le.dimension))
+		outputShape = onnxruntime_go.NewShape(int64(batchSize), int64(seqLength), int64(le.modelDimension))
 	}
 
 	outputTensor, err := onnxruntime_go.NewEmptyTensor[float32](outputShape)
@@ -1051,19 +1071,25 @@ func (le *LocalEmbedder) runInference(inputIDs, attentionMasks [][]int64) ([][][
 	outputData := outputTensor.GetData()
 	result := make([][][]float32, batchSize)
 
+	// Determine how much to copy - if target dim is smaller than model dim, we truncate
+	copyDim := le.dimension
+	if le.modelDimension < copyDim {
+		copyDim = le.modelDimension
+	}
+
 	if le.outputIsPooled {
 		for i := 0; i < batchSize; i++ {
 			result[i] = make([][]float32, 1)
 			result[i][0] = make([]float32, le.dimension)
-			copy(result[i][0], outputData[i*le.dimension:(i+1)*le.dimension])
+			copy(result[i][0], outputData[i*le.modelDimension : i*le.modelDimension+copyDim])
 		}
 	} else {
 		for i := 0; i < batchSize; i++ {
 			result[i] = make([][]float32, seqLength)
 			for j := 0; j < seqLength; j++ {
 				result[i][j] = make([]float32, le.dimension)
-				start := (i*seqLength + j) * le.dimension
-				copy(result[i][j], outputData[start:start+le.dimension])
+				start := (i*seqLength + j) * le.modelDimension
+				copy(result[i][j], outputData[start:start+copyDim])
 			}
 		}
 	}

@@ -13,6 +13,7 @@ embedding:
   provider: "local"
   model: "onnx-models/bge-small-en-v1.5-onnx"
   batch_size: 48
+  #dim: 384 # Optional: override or truncate dimensions
 ```
 
 ## Model cache

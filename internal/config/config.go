@@ -43,6 +43,7 @@ type EmbeddingConfig struct {
 	ModelCacheDir  string `json:"model_cache_dir" yaml:"model_cache_dir" cue:"model_cache_dir"`
 	OnnxOutputName string `json:"onnx_output_name" yaml:"onnx_output_name" cue:"onnx_output_name"`
 	GPU            bool   `json:"gpu" yaml:"gpu" cue:"gpu"`
+	Dimension      int    `json:"dim" yaml:"dim" cue:"dim"`
 	APIKey         string `json:"api_key" yaml:"api_key" cue:"api_key"`
 	APIKeyEnv      string `json:"api_key_env" yaml:"api_key_env" cue:"api_key_env"`
 	BaseURL        string `json:"base_url" yaml:"base_url" cue:"base_url"`

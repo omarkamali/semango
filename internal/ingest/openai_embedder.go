@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ type OpenAIEmbedder struct {
 type OpenAIConfig struct {
 	APIKey     string  // API key (defaults to OPENAI_API_KEY env var)
 	Model      string  // e.g., "text-embedding-3-large"
+	Dimension  int     // Optional embedding dimension (for v3 models)
 	BatchSize  int     // Number of texts to embed in a single API call
 	Concurrent int     // Number of concurrent API calls
 	RateLimit  float64 // Requests per second limit
@@ -60,9 +62,13 @@ func NewOpenAIEmbedder(config OpenAIConfig) (*OpenAIEmbedder, error) {
 	client := openai.NewClientWithConfig(ocfg)
 
 	// Determine dimension based on model
-	dimension := getModelDimension(config.Model)
+	dimension := config.Dimension
 	if dimension == 0 {
-		return nil, fmt.Errorf("unknown model dimension for model: %s", config.Model)
+		dimension = getModelDimension(config.Model)
+	}
+
+	if dimension == 0 {
+		return nil, fmt.Errorf("unknown model dimension for model: %s. Please specify 'dim' in configuration.", config.Model)
 	}
 
 	return &OpenAIEmbedder{
@@ -215,6 +221,11 @@ func (oe *OpenAIEmbedder) embedBatch(ctx context.Context, texts []string) ([][]f
 		Model: openai.EmbeddingModel(oe.model),
 	}
 
+	// OpenAI v3 models support a dimensions parameter
+	if strings.Contains(oe.model, "text-embedding-3") {
+		req.Dimensions = oe.dimension
+	}
+
 	resp, err := oe.client.CreateEmbeddings(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
@@ -227,9 +238,14 @@ func (oe *OpenAIEmbedder) embedBatch(ctx context.Context, texts []string) ([][]f
 	results := make([][]float32, len(resp.Data))
 	for i, data := range resp.Data {
 		// Convert []float64 to []float32
-		embedding := make([]float32, len(data.Embedding))
-		for j, val := range data.Embedding {
-			embedding[j] = float32(val)
+		dataDim := len(data.Embedding)
+		copyDim := oe.dimension
+		if dataDim < copyDim {
+			copyDim = dataDim
+		}
+		embedding := make([]float32, copyDim)
+		for j := 0; j < copyDim; j++ {
+			embedding[j] = float32(data.Embedding[j])
 		}
 		results[i] = embedding
 	}

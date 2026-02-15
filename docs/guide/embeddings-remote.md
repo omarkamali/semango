@@ -34,4 +34,18 @@ Semango has a small list of known embedding dimensions (used for validation):
 - `text-embedding-ada-002` → 1536
 - `text-embedding-nomic-embed-text-v1.5` → 768
 
-If you use a different model, Semango currently cannot infer its dimension and will error.
+## Manual Dimension Override (Truncation)
+
+You can specify a custom dimension using the `dim` parameter.
+
+```yaml
+embedding:
+  provider: openai
+  model: text-embedding-3-large
+  dim: 1024  # Truncate large embeddings to 1024
+```
+
+For OpenAI `text-embedding-3-*` models, Semango passes this value directly to the API's `dimensions` parameter, which is more efficient than manual truncation. For other models (including self-hosted compatibles), Semango truncates the vector returned by the endpoint to the first `dim` elements.
+
+> [!IMPORTANT]
+> **Matryoshka Support**: Truncation is most effective with models trained via **Matryoshka Representation Learning** (e.g., OpenAI's v3 models). For older models like `text-embedding-ada-002`, truncating the vector will likely lead to poor search performance. Check [sbert.net](https://sbert.net) for more information on compatible models.
